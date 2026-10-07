@@ -1,0 +1,2517 @@
+<!-- @dsCard group="Maglo Web App" viewport="400x520" name="조달 품목 관리 서브메뉴" subtitle="2~3 depth 사이드바 메뉴 트리 프로토타입" -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>조달이</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+<style>
+  /* ── 폴백 토큰 ──────────────────────────────────────────────────
+     styles.css/tokens 파일이 어떤 이유로든 로드되지 않아도(경로 문제, 단일 파일로만 복사됨 등)
+     화면이 완전히 깨지지 않도록, 실제 디자인 토큰과 같은 변수명으로 기본값을 먼저 선언해둔다.
+     styles.css가 정상 로드되면 아래 블록의 값들은 그대로 뒤에서 덮어써진다(문서 순서상 나중에
+     로드되는 link가 우선). */
+  :root{
+    --text-primary:#1b212d; --text-secondary:#929eae; --text-tertiary:#78778b; --text-on-accent:#1b212d;
+    --surface-page:#ffffff; --surface-sidebar:#fafafa; --surface-card:#ffffff; --surface-muted:#f8f8f8;
+    --border-subtle:#f5f5f5; --border-default:#f2f2f2; --border-button:#f1f1f3;
+    --accent-primary-strong:#97f675; --accent-positive:#29a073; --accent-red:#eb001b;
+    --radius-xs:3px; --radius-sm:4px; --radius-md:5px; --radius-lg:8px; --radius-xl:10px; --radius-2xl:15px; --radius-pill:100px;
+    --font-display:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Malgun Gothic",sans-serif;
+    --font-body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Malgun Gothic",sans-serif;
+    --text-caption:500 12px/1 var(--font-body);
+    --text-body-sm:400 13px/1 var(--font-body);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--surface-page);font-family:var(--font-body)}
+
+  /* ── 로딩 스켈레톤 ── */
+  @keyframes skeleton-pulse{0%{opacity:.6}50%{opacity:1}100%{opacity:.6}}
+  .skeleton-block{background:var(--border-default);border-radius:var(--radius-md);animation:skeleton-pulse 1.3s ease-in-out infinite}
+
+  /* ── 인쇄(PDF 저장) ──────────────────────────────────────────────
+     사이드바/새로고침 버튼 등 조작 UI는 인쇄에서 숨기고, 카드 단위가 페이지 중간에서
+     잘리지 않도록 한다. */
+  @media print{
+    .no-print{display:none !important}
+    body{background:#fff}
+    .print-card{break-inside:avoid;page-break-inside:avoid}
+    .app-content{padding:0 !important}
+  }
+</style>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+
+function Chevron({ open }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+      style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s ease" }}>
+      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <path d="M3 6a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V6z"
+        stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function DotIcon() {
+  return (
+    <svg width="6" height="6" viewBox="0 0 6 6" style={{ flexShrink: 0 }}>
+      <circle cx="3" cy="3" r="3" fill="currentColor" />
+    </svg>
+  );
+}
+
+// depth: 1 = 최상위, 2 = 하위, 3 = 최하위(리프)
+const MENU = [
+  {
+    id: "new-items",
+    label: "신규 품목 현황",
+    depth: 1,
+  },
+  {
+    id: "jodal-item",
+    label: "조달 품목 관리",
+    depth: 1,
+    children: [
+      {
+        id: "item-id-mgmt",
+        label: "물품식별번호관리",
+        depth: 2,
+        children: [
+          { id: "item-id-search", label: "물품식별번호 조회", depth: 3 },
+          { id: "item-id-register", label: "물품식별번호 편집", depth: 3 },
+        ],
+      },
+    ],
+  },
+  {
+    id: "jodal-stats",
+    label: "조달통계",
+    depth: 1,
+  },
+];
+
+// ── CONFIG ──────────────────────────────────────────────────────
+// 자사명/시트 ID/탭 GID를 한 곳에 모아둔다. 시트를 복제하거나 자사명 표기가 바뀌면
+// 이 블록만 고치면 된다 (파일 전체에 흩어진 문자열 리터럴을 찾아 바꿀 필요 없음).
+const CONFIG = {
+  OUR_COMPANY_MARK: "펜타시큐리티",
+  SPREADSHEET_ID: "1tFCFW3dG32UWlmjjTdTmPfTUvklXisJSUnTyWTpmjvk",
+  TAB_GID: {
+    items: "980560581",       // 품목 데이터
+    "WAPPLES": "1912481746",  // WAPPLES 납품요구
+    "D.AMO": "1427680464",    // D.AMO 납품요구
+    "iSIGN": "1279871189",    // iSIGN 납품요구
+  },
+  // iSIGN 내부 4개 세부 그룹(SSO/PASS/WA/OS 로그온) 납품요구 탭 — 백엔드 sheets.py의
+  // _isign_group_for_detail 분류와 1:1로 대응된다.
+  ISIGN_GROUP_GID: {
+    "SSO": "706480312",
+    "PASS": "1648169326",
+    "WA": "1107471479",
+    "OS 로그온": "1564206362",
+  },
+  // 각 탭에서 화면이 반드시 필요로 하는 컬럼 — 시트 구조가 바뀌면 화면이 빈 값으로
+  // 조용히 깨지는 대신 "시트 컬럼 OO이 없습니다"를 보여주기 위한 검증 기준.
+  REQUIRED_COLUMNS: {
+    items: ["등록일자", "제품명", "세부분류", "제조사명", "물품식별번호", "품목"],
+    delivery: ["납품요구일자", "물품식별번호", "납품금액", "수요기관", "수요기관유형"],
+  },
+};
+
+// ── 구글시트 연동 (CSV 공개 링크) ──────────────────────────────────
+const SPREADSHEET_ID = CONFIG.SPREADSHEET_ID;
+const TAB_GID = CONFIG.TAB_GID;
+// iSIGN 내부 4개 세부 그룹(SSO/PASS/WA/OS 로그온) 납품요구 탭 — 백엔드 sheets.py의
+// _isign_group_for_detail 분류와 1:1로 대응된다.
+const ISIGN_GROUPS = ["SSO", "PASS", "WA", "OS 로그온"];
+const ISIGN_GROUP_GID = CONFIG.ISIGN_GROUP_GID;
+// 세부분류 코드 접두어 -> iSIGN 그룹. (백엔드 sheets.py:_isign_group_for_detail 과 동일한 규칙)
+// 01 SSO/EAM(통합인증) / 02 PKI,구간암호화·공인인증(WA) / 03-* 2차인증·MFA류(PASS) / 04 Windows OS 로그온
+const ISIGN_GROUP_PREFIX = [
+  ["01", "SSO"],
+  ["02", "WA"],
+  ["03", "PASS"],
+  ["04", "OS 로그온"],
+];
+function isignGroupForDetail(detail) {
+  const d = (detail || "").trim();
+  for (const [prefix, group] of ISIGN_GROUP_PREFIX) {
+    if (d.startsWith(prefix)) return group;
+  }
+  return "기타";
+}
+function csvUrl(gid) {
+  return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
+}
+
+// RFC4180 스타일 CSV 파서 (따옴표로 감싼 콤마/줄바꿈 필드 처리)
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); field = "";
+        if (row.length > 1 || row[0] !== "") rows.push(row);
+        row = [];
+      } else field += c;
+    }
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  if (rows.length === 0) return { headers: [], records: [] };
+  const headers = rows[0];
+  const records = rows.slice(1).map((r) => {
+    const rec = {};
+    headers.forEach((h, i) => { rec[h] = r[i] ?? ""; });
+    return rec;
+  });
+  return { headers, records };
+}
+
+// 시트 컬럼 검증 — 필수 컬럼이 빠져 있으면 화면이 "-"/빈 값으로 조용히 깨지는 대신
+// 어떤 컬럼이 왜 없는지 바로 알 수 있도록 에러를 던진다.
+function validateColumns(headers, requiredCols, sheetLabel) {
+  const missing = requiredCols.filter((c) => !headers.includes(c));
+  if (missing.length > 0) {
+    throw new Error(`"${sheetLabel}" 시트에 필수 컬럼이 없습니다: ${missing.map((c) => `"${c}"`).join(", ")}`);
+  }
+}
+
+async function fetchSheetCSV(gid) {
+  const res = await fetch(csvUrl(gid));
+  if (!res.ok) throw new Error(`시트 조회 실패 (gid=${gid}): HTTP ${res.status}`);
+  const text = await res.text();
+  return parseCSV(text);
+}
+
+function parseAmount(v) {
+  const n = Number(String(v ?? "").replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+// 원 단위 금액 -> "9억 2,847만" 형식. 천단위 콤마가 "만원" 숫자 안에서 소수점처럼
+// 오독되는 것을 막기 위해 억 단위를 분리해 표기한다 (예: 928,470,000 -> "9억 2,847만").
+function formatEokMan(amount) {
+  const man = Math.round(amount / 10000);
+  const eok = Math.floor(man / 10000);
+  const rest = man % 10000;
+  if (eok > 0) {
+    return rest > 0 ? `${eok}억 ${rest.toLocaleString()}만` : `${eok}억`;
+  }
+  return `${man.toLocaleString()}만`;
+}
+
+// "납품요구일자" 형식: YYYYMMDD 문자열
+function parseYyyymmdd(v) {
+  const s = String(v ?? "").trim();
+  if (!/^\d{8}$/.test(s)) return null;
+  return new Date(Number(s.slice(0, 4)), Number(s.slice(4, 6)) - 1, Number(s.slice(6, 8)));
+}
+
+function findMenuPath(nodes, id, trail = []) {
+  for (const node of nodes) {
+    const nextTrail = [...trail, node.label];
+    if (node.id === id) return nextTrail;
+    if (node.children) {
+      const found = findMenuPath(node.children, id, nextTrail);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function NavNode({ node, expanded, onToggle, active, onSelect }) {
+  const hasChildren = !!(node.children && node.children.length);
+  const isOpen = !!expanded[node.id];
+  const isActive = active === node.id;
+  const indent = 15 + (node.depth - 1) * 18;
+
+  const row = (
+    <button
+      onClick={() => (hasChildren ? onToggle(node.id) : onSelect(node.id))}
+      style={{
+        all: "unset",
+        cursor: "pointer",
+        boxSizing: "border-box",
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: `10px 15px 10px ${indent}px`,
+        borderRadius: "var(--radius-lg)",
+        background: isActive ? "var(--accent-primary-strong)" : "transparent",
+      }}
+      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--surface-muted)"; }}
+      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+    >
+      {node.depth === 1 && <FolderIcon />}
+      {node.depth === 3 && <DotIcon />}
+      <span style={{
+        flex: 1,
+        textAlign: "left",
+        font: node.depth === 1 ? "600 14px var(--font-body)" : "500 14px var(--font-body)",
+        color: isActive ? "var(--text-primary)" : (node.depth === 3 ? "var(--text-tertiary)" : "var(--text-secondary)"),
+        whiteSpace: "nowrap",
+      }}>
+        {node.label}
+      </span>
+      {hasChildren && <span style={{ color: "var(--text-tertiary)", display: "flex" }}><Chevron open={isOpen} /></span>}
+    </button>
+  );
+
+  return (
+    <div>
+      {row}
+      {hasChildren && isOpen && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
+          {node.children.map((child) => (
+            <NavNode key={child.id} node={child} expanded={expanded} onToggle={onToggle} active={active} onSelect={onSelect} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PRODUCT_TABS = ["WAPPLES", "D.AMO", "iSIGN"];
+const PRODUCT_LABEL = { "D.AMO": "D.AMO", "WAPPLES": "WAPPLES", "iSIGN": "iSIGN" };
+
+// "품목 데이터" 탭 표시 컬럼 (조회일자/품목 제외 — 검색 화면에서는 불필요)
+const ITEM_COLUMNS = ["제품명", "세부분류", "제조사명", "물품식별번호", "품목", "등록일자"];
+
+// 레코드(컬럼명 키 객체) -> 테이블 표시용 행 배열
+function recordToRow(record) {
+  return ITEM_COLUMNS.map((col) => record[col] ?? "-");
+}
+
+function ProductTabs({ tab, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border-default)", marginBottom: 16 }}>
+      {PRODUCT_TABS.map((t) => {
+        const isActive = t === tab;
+        return (
+          <button
+            key={t}
+            onClick={() => onChange(t)}
+            style={{
+              all: "unset",
+              cursor: "pointer",
+              padding: "10px 20px",
+              font: isActive ? "600 14px var(--font-body)" : "500 14px var(--font-body)",
+              color: isActive ? "var(--text-primary)" : "var(--text-tertiary)",
+              borderBottom: isActive ? "2px solid var(--accent-primary-strong)" : "2px solid transparent",
+              marginBottom: -1,
+            }}
+          >
+            {PRODUCT_LABEL[t] || t}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M20 20l-4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SearchResultTable({ recordsByTab }) {
+  const [tab, setTab] = React.useState(PRODUCT_TABS[0]);
+  const [query, setQuery] = React.useState("");
+  const [appliedQuery, setAppliedQuery] = React.useState("");
+  const [viewMode, setViewMode] = React.useState("list"); // "list" | "byMfr"
+  const [expandedMfr, setExpandedMfr] = React.useState(null);
+
+  const handleTabChange = (t) => {
+    setTab(t);
+    setQuery("");
+    setAppliedQuery("");
+    setExpandedMfr(null);
+  };
+
+  const runSearch = () => setAppliedQuery(query.trim());
+  const resetSearch = () => { setQuery(""); setAppliedQuery(""); };
+
+  const records = recordsByTab[tab];
+  const filteredRecords = appliedQuery === ""
+    ? records
+    : records.filter((record) => Object.values(record).some((v) => String(v).toLowerCase().includes(appliedQuery.toLowerCase())));
+  const filteredRows = filteredRecords.map(recordToRow);
+
+  // 제조사별 보기 — 같은 제조사가 가진 품목과 수를 한 번에 확인
+  const groupedByMfr = React.useMemo(() => {
+    const map = new Map();
+    for (const r of filteredRecords) {
+      const mfr = (r["제조사명"] || "").trim() || "미상";
+      if (!map.has(mfr)) map.set(mfr, []);
+      map.get(mfr).push(r);
+    }
+    return Array.from(map.entries())
+      .map(([name, recs]) => ({ name, recs }))
+      .sort((a, b) => b.recs.length - a.recs.length);
+  }, [filteredRecords]);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <span style={{
+          font: "600 12px var(--font-body)", color: "var(--text-on-accent)",
+          background: "var(--accent-primary)", borderRadius: "var(--radius-pill)",
+          padding: "3px 10px",
+        }}>
+          구글시트 연동
+        </span>
+        <span style={{ font: "var(--text-body-sm)", color: "var(--text-tertiary)" }}>
+          등록 물품식별번호 목록
+        </span>
+      </div>
+
+      <ProductTabs tab={tab} onChange={handleTabChange} />
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+        <div style={{ position: "relative", flex: "0 1 320px" }}>
+          <span style={{
+            position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+            color: "var(--text-tertiary)", display: "flex",
+          }}>
+            <SearchIcon />
+          </span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
+            placeholder={`${PRODUCT_LABEL[tab] || tab} 항목 검색 (물품식별번호, 상품모델명, 제조사명 등)`}
+            style={{
+              boxSizing: "border-box",
+              width: "100%",
+              padding: "9px 12px 9px 36px",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border-button)",
+              font: "var(--text-body-sm)",
+              color: "var(--text-primary)",
+              background: "var(--surface-page)",
+            }}
+          />
+        </div>
+        <button
+          onClick={runSearch}
+          style={{
+            all: "unset", cursor: "pointer", padding: "10px 18px",
+            borderRadius: "var(--radius-md)", background: "var(--accent-primary-strong)",
+            font: "600 14px var(--font-body)", color: "var(--text-on-accent)", whiteSpace: "nowrap",
+          }}
+        >
+          검색
+        </button>
+        <button
+          onClick={resetSearch}
+          style={{
+            all: "unset", cursor: "pointer", padding: "10px 18px",
+            borderRadius: "var(--radius-md)", border: "1px solid var(--border-button)",
+            font: "500 14px var(--font-body)", color: "var(--text-secondary)", whiteSpace: "nowrap",
+          }}
+        >
+          초기화
+        </button>
+        {appliedQuery !== "" && (
+          <span style={{ font: "var(--text-body-sm)", color: "var(--text-tertiary)" }}>
+            '{appliedQuery}' 검색 결과 {filteredRows.length}건
+          </span>
+        )}
+        <div style={{ display: "flex", gap: 2, marginLeft: "auto", background: "var(--surface-muted)", borderRadius: "var(--radius-pill)", padding: 2 }}>
+          {[["list", "목록"], ["byMfr", "제조사별"]].map(([mode, label]) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              style={{
+                all: "unset", cursor: "pointer", padding: "6px 14px", borderRadius: "var(--radius-pill)",
+                background: viewMode === mode ? "var(--surface-card)" : "transparent",
+                font: `${viewMode === mode ? 700 : 500} 12px var(--font-body)`,
+                color: viewMode === mode ? "var(--text-primary)" : "var(--text-tertiary)",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {viewMode === "byMfr" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {groupedByMfr.length === 0 ? (
+            <div style={{
+              padding: 24, textAlign: "center", font: "var(--text-body-sm)", color: "var(--text-tertiary)",
+              background: "var(--surface-card)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-xl)",
+            }}>
+              검색 결과가 없습니다.
+            </div>
+          ) : groupedByMfr.map((g) => {
+            const isOpen = expandedMfr === g.name;
+            const isOurs = g.name.includes(OUR_COMPANY_MARK);
+            return (
+              <div key={g.name} style={{ background: "var(--surface-card)", border: "1px solid var(--border-default)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}>
+                <button
+                  onClick={() => setExpandedMfr(isOpen ? null : g.name)}
+                  style={{
+                    all: "unset", cursor: "pointer", width: "100%", boxSizing: "border-box",
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "12px 16px", background: isOurs ? "rgba(22,163,74,0.08)" : "transparent",
+                  }}
+                >
+                  <span style={{ font: isOurs ? "700 13px var(--font-body)" : "600 13px var(--font-body)", color: isOurs ? OUR_COLOR : "var(--text-primary)" }}>
+                    {g.name}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ font: "var(--text-caption)", color: "var(--text-tertiary)" }}>{g.recs.length}개 품목</span>
+                    <Chevron open={isOpen} />
+                  </span>
+                </button>
+                {isOpen && (
+                  <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                    <thead>
+                      <tr>
+                        {["세부분류", "물품식별번호", "품목", "등록일자"].map((c) => (
+                          <th key={c} style={{
+                            borderTop: "1px solid var(--border-subtle)", borderBottom: "1px solid var(--border-default)",
+                            background: "var(--surface-muted)", padding: "8px 12px",
+                            font: "600 11px var(--font-body)", color: "var(--text-secondary)", textAlign: "left", whiteSpace: "nowrap",
+                          }}>
+                            {c}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.recs.map((r, i) => (
+                        <tr key={r.물품식별번호 ?? i}>
+                          <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 12px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["세부분류"] || "-"}</td>
+                          <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 12px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["물품식별번호"] || "-"}</td>
+                          <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 12px", font: "var(--text-body-sm)" }}>{r["품목"] || "-"}</td>
+                          <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 12px", font: "var(--text-body-sm)", whiteSpace: "nowrap", color: "var(--text-tertiary)" }}>{r["등록일자"] || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+      <div style={{
+        background: "var(--surface-card)",
+        border: "1px solid var(--border-default)",
+        borderRadius: "var(--radius-xl)",
+        overflow: "auto",
+        maxWidth: "100%",
+      }}>
+        <table style={{ borderCollapse: "collapse", width: "max-content", minWidth: "100%" }}>
+          <thead>
+            <tr>
+              {ITEM_COLUMNS.map((col, i) => (
+                <th key={i} style={{
+                  position: "sticky", top: 0,
+                  background: "var(--surface-muted)",
+                  borderBottom: "1px solid var(--border-default)",
+                  borderRight: "1px solid var(--border-subtle)",
+                  padding: "10px 12px",
+                  font: "600 12px var(--font-body)",
+                  color: "var(--text-secondary)",
+                  whiteSpace: "nowrap",
+                  textAlign: "left",
+                }}>
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.length === 0 ? (
+              <tr>
+                <td colSpan={ITEM_COLUMNS.length} style={{ padding: "24px 12px", font: "var(--text-body-sm)", color: "var(--text-tertiary)", textAlign: "center" }}>
+                  검색 결과가 없습니다.
+                </td>
+              </tr>
+            ) : (
+              filteredRows.map((row, ri) => (
+                <tr key={filteredRecords[ri].물품식별번호 ?? ri}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} style={{
+                      borderBottom: "1px solid var(--border-subtle)",
+                      borderRight: "1px solid var(--border-subtle)",
+                      padding: "9px 12px",
+                      font: "var(--text-body-sm)",
+                      color: cell === "-" ? "var(--text-tertiary)" : "var(--text-primary)",
+                      whiteSpace: "nowrap",
+                    }}>
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      )}
+    </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+      <path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l1 13a1 1 0 001 1h6a1 1 0 001-1l1-13"
+        stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function IdentifierEditor({ recordsByTab, onAdd, onRemove, localOverrides, onResetLocal }) {
+  const [tab, setTab] = React.useState(PRODUCT_TABS[0]);
+  const blankForm = () => ({ code: "", desc: "", detail: "", manufacturer: "", date: todayIso() });
+  const [form, setForm] = React.useState(blankForm);
+  const [error, setError] = React.useState("");
+
+  const rows = recordsByTab[tab];
+  const localAddCount = (localOverrides?.additions?.[tab] || []).length;
+  const localRemoveCount = (localOverrides?.removals?.[tab] || []).length;
+  const hasLocalChanges = localAddCount > 0 || localRemoveCount > 0;
+
+  const handleTabChange = (t) => {
+    setTab(t);
+    setForm(blankForm());
+    setError("");
+  };
+
+  const updateField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const handleAdd = () => {
+    const code = form.code.trim();
+    if (!code) {
+      setError("물품식별번호를 입력하세요.");
+      return;
+    }
+    if (rows.some((r) => r.물품식별번호 === code)) {
+      setError(`이미 ${PRODUCT_LABEL[tab] || tab}에 등록된 물품식별번호입니다.`);
+      return;
+    }
+    onAdd(tab, {
+      제품명: tab,
+      세부분류: form.detail.trim() || "-",
+      제조사명: form.manufacturer.trim() || "-",
+      물품식별번호: code,
+      품목: form.desc.trim() || "-",
+      등록일자: form.date || todayIso(),
+    });
+    setForm(blankForm());
+    setError("");
+  };
+
+  const handleRemove = (code) => {
+    onRemove(tab, code);
+  };
+
+  const inputStyle = {
+    boxSizing: "border-box",
+    width: "100%",
+    padding: "9px 12px",
+    borderRadius: "var(--radius-md)",
+    border: "1px solid var(--border-button)",
+    font: "var(--text-body-sm)",
+    color: "var(--text-primary)",
+    background: "var(--surface-page)",
+  };
+  const labelStyle = { font: "var(--text-caption)", color: "var(--text-tertiary)", marginBottom: 4, display: "block" };
+
+  return (
+    <div>
+      <ProductTabs tab={tab} onChange={handleTabChange} />
+
+      <div style={{
+        background: "var(--surface-card)",
+        border: "1px solid var(--border-default)",
+        borderRadius: "var(--radius-xl)",
+        padding: 20,
+        marginBottom: 20,
+      }}>
+        <div style={{ font: "600 14px var(--font-body)", color: "var(--text-primary)", marginBottom: 14 }}>
+          {PRODUCT_LABEL[tab] || tab} 물품식별번호 추가
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div style={{ flex: "0 0 100px" }}>
+            <label style={labelStyle}>제품명</label>
+            <input style={{ ...inputStyle, background: "var(--surface-muted)", color: "var(--text-tertiary)" }} value={PRODUCT_LABEL[tab] || tab} disabled />
+          </div>
+          <div style={{ flex: "1 1 140px" }}>
+            <label style={labelStyle}>물품식별번호 *</label>
+            <input style={inputStyle} value={form.code} onChange={updateField("code")}
+              placeholder="예: 21342004"
+              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }} />
+          </div>
+          <div style={{ flex: "1 1 160px" }}>
+            <label style={labelStyle}>품목</label>
+            <input style={inputStyle} value={form.desc} onChange={updateField("desc")}
+              placeholder="예: 방화벽장치, 펜타시큐리티, WAPPLES 5700, 웹방화벽"
+              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }} />
+          </div>
+          <div style={{ flex: "1 1 120px" }}>
+            <label style={labelStyle}>세부분류 (선택)</label>
+            <input style={inputStyle} value={form.detail} onChange={updateField("detail")}
+              placeholder="예: 웹방화벽"
+              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }} />
+          </div>
+          <div style={{ flex: "1 1 140px" }}>
+            <label style={labelStyle}>제조사</label>
+            <input style={inputStyle} value={form.manufacturer} onChange={updateField("manufacturer")}
+              placeholder="예: 펜타시큐리티"
+              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }} />
+          </div>
+          <div style={{ flex: "0 0 150px" }}>
+            <label style={labelStyle}>등록일자</label>
+            <input type="date" style={inputStyle} value={form.date} onChange={updateField("date")} />
+          </div>
+          <button
+            onClick={handleAdd}
+            style={{
+              all: "unset",
+              cursor: "pointer",
+              boxSizing: "border-box",
+              padding: "10px 20px",
+              borderRadius: "var(--radius-md)",
+              background: "var(--accent-primary-strong)",
+              font: "600 14px var(--font-body)",
+              color: "var(--text-on-accent)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            + 추가
+          </button>
+        </div>
+        {error && (
+          <div style={{ marginTop: 10, font: "var(--text-body-sm)", color: "var(--accent-red)" }}>
+            {error}
+          </div>
+        )}
+      </div>
+
+      {hasLocalChanges && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          background: "#fff7ed", border: "1px solid #fdba74", borderRadius: "var(--radius-md)",
+          padding: "10px 14px", marginBottom: 16, font: "var(--text-body-sm)", color: "#9a3412",
+        }}>
+          <span>
+            ⚠ 이 추가/삭제({localAddCount + localRemoveCount}건)는 이 브라우저에만 임시 저장되며, 구글 시트에는 반영되지 않습니다.
+            새로고침해도 유지되지만 다른 PC·브라우저에서는 보이지 않습니다.
+          </span>
+          <button
+            onClick={() => onResetLocal && onResetLocal()}
+            style={{ all: "unset", cursor: "pointer", font: "600 var(--text-body-sm)", color: "#9a3412", textDecoration: "underline", whiteSpace: "nowrap" }}
+          >
+            임시 변경 초기화
+          </button>
+        </div>
+      )}
+
+      <div style={{
+        background: "var(--surface-card)",
+        border: "1px solid var(--border-default)",
+        borderRadius: "var(--radius-xl)",
+        overflow: "hidden",
+      }}>
+        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead>
+            <tr>
+              {["물품식별번호", "품목", "세부분류", "제조사", "등록일자", ""].map((col, i) => (
+                <th key={i} style={{
+                  background: "var(--surface-muted)",
+                  borderBottom: "1px solid var(--border-default)",
+                  padding: "10px 14px",
+                  font: "600 12px var(--font-body)",
+                  color: "var(--text-secondary)",
+                  textAlign: "left",
+                  whiteSpace: "nowrap",
+                  width: col === "" ? 70 : "auto",
+                }}>
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={6} style={{ padding: "24px 14px", font: "var(--text-body-sm)", color: "var(--text-tertiary)", textAlign: "center" }}>
+                  {PRODUCT_LABEL[tab] || tab}에 등록된 물품식별번호가 없습니다.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <tr key={row.물품식별번호}>
+                  <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "10px 14px", font: "var(--text-body-sm)", color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                    {row.물품식별번호}
+                  </td>
+                  <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "10px 14px", font: "var(--text-body-sm)", color: "var(--text-primary)" }}>
+                    {row.품목 || "-"}
+                  </td>
+                  <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "10px 14px", font: "var(--text-body-sm)", color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                    {row.세부분류 || "-"}
+                  </td>
+                  <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "10px 14px", font: "var(--text-body-sm)", color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                    {row.제조사명 || "-"}
+                  </td>
+                  <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "10px 14px", font: "var(--text-body-sm)", color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>
+                    {row.등록일자 || "-"}
+                  </td>
+                  <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "10px 14px" }}>
+                    <button
+                      onClick={() => handleRemove(row.물품식별번호)}
+                      title="삭제"
+                      style={{
+                        all: "unset",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 28,
+                        height: 28,
+                        borderRadius: "var(--radius-md)",
+                        color: "var(--accent-red)",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface-muted)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <TrashIcon />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// "품목 데이터" 탭에서 물품식별번호 -> 제조사명 매핑 구성 (경쟁 "제조사" 기준 비교를 위함 —
+// 납품업체명은 낙찰받은 총판/유통사라 제조사와 다를 수 있음)
+function manufacturerById(items) {
+  const map = new Map();
+  for (const r of items) {
+    const id = (r["물품식별번호"] || "").trim();
+    const mfr = (r["제조사명"] || "").trim();
+    if (id && mfr) map.set(id, mfr);
+  }
+  return map;
+}
+
+// 제조사별로 등록한 품목 목록 — "제조사별로 가진 제품과 수를 볼 수 있어야 한다"는 요구에 따라
+// 제조사별 실적 표에서 보유 품목 수 + 목록을 바로 확인할 수 있도록 한다.
+function itemsByManufacturer(items) {
+  const map = new Map();
+  for (const r of items) {
+    const mfr = (r["제조사명"] || "").trim();
+    const id = (r["물품식별번호"] || "").trim();
+    if (!mfr || !id) continue;
+    if (!map.has(mfr)) map.set(mfr, []);
+    map.get(mfr).push({ id, desc: (r["품목"] || "").trim() });
+  }
+  return map;
+}
+
+// 제조사명별 납품금액 합계 집계, 내림차순 정렬 (납품업체명이 아닌 실제 제조사 기준)
+function aggregateByCompany(rows, mfrMap) {
+  const map = new Map();
+  for (const r of rows) {
+    const id = (r["물품식별번호"] || "").trim();
+    const name = mfrMap.get(id) || (r["납품업체명"] || "미상").trim() || "미상";
+    const amt = parseAmount(r["납품금액"]);
+    const cur = map.get(name) || { name, amount: 0, count: 0 };
+    cur.amount += amt;
+    cur.count += 1;
+    map.set(name, cur);
+  }
+  return Array.from(map.values()).sort((a, b) => b.amount - a.amount);
+}
+
+const OUR_COMPANY_MARK = CONFIG.OUR_COMPANY_MARK;
+// 초록(OUR_COLOR)은 "펜타시큐리티" 전용 색으로만 쓴다. 경쟁사는 전부 회색조로 낮춰서
+// 비교 대상(자사)이 항상 한눈에 띄도록 한다 — 밝은 다색 팔레트는 "어느 색이 어느 회사"를
+// 매번 범례로 확인해야 해서 쓰지 않는다.
+const COMPETITOR_COLORS = ["#94a3b8", "#64748b", "#cbd5e1", "#475569", "#a1a1aa", "#d4d4d8"];
+const OUR_COLOR = "#16a34a";
+// 연도별 비교 차트 전용: 가장 최근 연도만 초록으로 강조하고, 과거 연도는 회색조로 낮춘다.
+function colorForYear(i, total) {
+  return i === total - 1 ? OUR_COLOR : COMPETITOR_COLORS[(total - 2 - i) % COMPETITOR_COLORS.length];
+}
+
+function monthKeyOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+
+// 2025년 1월 ~ 현재(오늘 기준) 월 목록
+function monthsSince2025() {
+  const start = new Date(2025, 0, 1);
+  const now = new Date();
+  const end = now < start ? start : now;
+  const months = [];
+  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cur <= end) {
+    months.push(monthKeyOf(cur));
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  }
+  return months;
+}
+
+function monthLabel(key) {
+  const [y, m] = key.split("-");
+  return `${y.slice(2)}.${m}`;
+}
+
+// "품목 데이터"에서 해당 제품의 자사(펜타시큐리티) 제조사명 원문을 찾는다 (없으면 기본 표기 사용)
+function ourCompanyName(mfrMap) {
+  for (const name of mfrMap.values()) {
+    if (name.includes(OUR_COMPANY_MARK)) return name;
+  }
+  return "펜타시큐리티 (주)";
+}
+
+// 제조사(경쟁사)별 월별 집계: [{ name, total, monthly: Map(month -> {amount,count,records}) }]
+// 비교 기준선 확보를 위해 자사(펜타시큐리티)는 납품 실적이 0건이어도 항상 포함하고 맨 앞에 표시한다.
+function buildMonthlySeries(rows, mfrMap, months) {
+  const monthSet = new Set(months);
+  const byCompany = new Map();
+  byCompany.set(ourCompanyName(mfrMap), new Map());
+  for (const r of rows) {
+    const id = (r["물품식별번호"] || "").trim();
+    const name = mfrMap.get(id) || (r["납품업체명"] || "미상").trim() || "미상";
+    const d = parseYyyymmdd(r["납품요구일자"]);
+    if (!d) continue;
+    const mk = monthKeyOf(d);
+    if (!monthSet.has(mk)) continue;
+    if (!byCompany.has(name)) byCompany.set(name, new Map());
+    const monthMap = byCompany.get(name);
+    const cur = monthMap.get(mk) || { amount: 0, count: 0, qty: 0, records: [] };
+    cur.amount += parseAmount(r["납품금액"]);
+    cur.qty += parseAmount(r["납품수량"]);
+    cur.count += 1;
+    cur.records.push(r);
+    monthMap.set(mk, cur);
+  }
+  return Array.from(byCompany.entries())
+    .map(([name, monthly]) => {
+      let total = 0;
+      for (const v of monthly.values()) total += v.amount;
+      return { name, monthly, total };
+    })
+    .sort((a, b) => {
+      const aOurs = a.name.includes(OUR_COMPANY_MARK), bOurs = b.name.includes(OUR_COMPANY_MARK);
+      if (aOurs !== bOurs) return aOurs ? -1 : 1;
+      return b.total - a.total;
+    });
+}
+
+// 특정 연도의 1월~(uptoMonthIdx, 0=1월..11=12월)까지 한 엔티티의 월별 누적값 배열.
+// 그 달에 납품이 하나도 없으면(amt===0) flat:true — 호출부에서 그 구간을 점선으로 그릴 때 쓴다.
+function cumulativeByCalendarMonth(entitySeries, year, uptoMonthIdx) {
+  const out = [];
+  let running = 0;
+  for (let m = 0; m <= uptoMonthIdx; m++) {
+    const mk = `${year}-${String(m + 1).padStart(2, "0")}`;
+    const amt = entitySeries ? (entitySeries.monthly.get(mk)?.amount || 0) : 0;
+    running += amt;
+    out.push({ monthIdx: m, cum: running, flat: amt === 0 });
+  }
+  return out;
+}
+
+// 기간(월 목록)에 대한 자사 점유율/순위 요약 — 상단 요약카드 + 상세테이블 전환에 공용으로 사용
+function shareForPeriod(series, periodMonths) {
+  const rows = periodTotals(series, periodMonths);
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  const ours = rows.find((r) => r.name.includes(OUR_COMPANY_MARK));
+  const ourAmt = ours ? ours.amount : 0;
+  const share = total > 0 ? (ourAmt / total) * 100 : 0;
+  const rank = ours ? rows.findIndex((r) => r.name === ours.name) + 1 : null;
+  const rankLabel = total === 0
+    ? "실적 없음"
+    : rows.length <= 1
+      ? "경쟁사 없음"
+      : `${rows.length}개사 중 ${rank}위`;
+  return { rows, total, ourAmt, share, rankLabel };
+}
+
+// 특정 기간(월 목록)에 대한 회사별 수주/수량/금액 집계 (점유율 0%인 회사는 자사 제외 숨김)
+function periodTotals(series, periodMonths) {
+  const rows = series
+    .map((s) => {
+      let amount = 0, count = 0, qty = 0;
+      for (const m of periodMonths) {
+        const cell = s.monthly.get(m);
+        if (cell) { amount += cell.amount; count += cell.count; qty += cell.qty; }
+      }
+      return { name: s.name, amount, count, qty };
+    })
+    .filter((r) => r.count > 0 || r.name.includes(OUR_COMPANY_MARK));
+  return rows.sort((a, b) => b.amount - a.amount);
+}
+
+// 여러 패널을 "한 세트"로 묶어 보여줄 때 그 위에 붙이는 작은 그룹 캡션.
+// 패널 자체의 제목(각 패널 안)과는 다른 레벨 — 패널들의 묶음을 설명한다.
+// 타이틀별로 구분되는 섹션을 각각 독립된 카드로 감싸, "차곡차곡 쌓인" 느낌이 아니라
+// 정돈된 패널들의 모음으로 보이게 한다. title이 없으면(자체 제목이 있는 하위 컴포넌트)
+// 카드 테두리만 두르고 헤더는 생략.
+// 여러 패널을 "한 세트"로 묶어 보여줄 때 그 위에 붙이는 작은 그룹 캡션.
+function SectionLabel({ children }) {
+  return (
+    <div style={{
+      font: "600 11px var(--font-body)", color: "var(--text-tertiary)",
+      letterSpacing: 0.4, textTransform: "uppercase", marginTop: 4,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function Panel({ title, extra, children, style }) {
+  return (
+    <div style={{
+      background: "var(--surface-card)",
+      border: "1px solid var(--border-default)",
+      borderRadius: "var(--radius-xl)",
+      padding: 24,
+      height: "100%",
+      boxSizing: "border-box",
+      ...style,
+    }}>
+      {title && (
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 14, minHeight: 20 }}>
+          <div style={{ font: "600 13px var(--font-body)", color: "var(--text-primary)" }}>{title}</div>
+          {extra}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+// 모든 소형 요약 표(PeriodTable/ManufacturerTable/ProductSummaryTable/YearlyShareMatrix)가
+// 공유하는 셀 스타일 — 패딩·글자크기·숫자 정렬을 한 곳에서 고정해 표마다 레이아웃이
+// 제각각으로 보이지 않게 한다.
+const DASH_TH = {
+  padding: "8px", font: "700 12px var(--font-body)", color: "var(--text-secondary)",
+  borderBottom: "1px solid var(--border-default)", whiteSpace: "nowrap",
+};
+const DASH_TD_NAME = {
+  padding: "10px 8px", textAlign: "left", color: "var(--text-primary)",
+  maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+};
+const DASH_TD_NUM = {
+  padding: "10px 8px", textAlign: "right", color: "var(--text-primary)", font: "11px var(--font-body)",
+  whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
+};
+const DASH_TOTAL_BORDER = { borderTop: "2px solid var(--border-default)" };
+function dashNameFont(bold) { return `${bold ? 700 : 500} 11px var(--font-body)`; }
+
+function PeriodTable({ title, rows }) {
+  const totalAmount = rows.reduce((s, r) => s + r.amount, 0);
+  const maxShare = Math.max(1, ...rows.map((r) => (totalAmount > 0 ? (r.amount / totalAmount) * 100 : 0)));
+
+  return (
+    <div style={{ flex: "1 1 0", minWidth: 230 }}>
+      {title && (
+        <div style={{ font: "600 12px var(--font-body)", color: "var(--text-primary)", marginBottom: 6 }}>{title}</div>
+      )}
+      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+        <thead>
+          <tr>
+            {["제조사", "금액", "점유율"].map((col) => (
+              <th key={col} style={{ ...DASH_TH, textAlign: col === "제조사" ? "left" : "right" }}>
+                {col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td colSpan={3} style={{ padding: "10px 8px", font: "var(--text-body-sm)", color: "var(--text-tertiary)", textAlign: "center" }}>실적 없음</td></tr>
+          ) : rows.map((r) => {
+            const isOurs = r.name.includes(OUR_COMPANY_MARK);
+            const share = totalAmount > 0 ? (r.amount / totalAmount) * 100 : 0;
+            return (
+              <tr key={r.name} style={{ background: isOurs ? "rgba(22,163,74,0.1)" : "transparent" }}>
+                <td style={{ ...DASH_TD_NAME, font: dashNameFont(isOurs) }} title={r.name}>{r.name}</td>
+                <td style={DASH_TD_NUM}>{formatEokMan(r.amount)}</td>
+                <td style={DASH_TD_NUM}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+                    <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border-default)", overflow: "hidden" }}>
+                      <div style={{
+                        width: `${Math.min(100, (share / maxShare) * 100)}%`, height: "100%",
+                        background: isOurs ? OUR_COLOR : "var(--text-tertiary)",
+                      }} />
+                    </div>
+                    <span style={{ minWidth: 26, textAlign: "right" }}>{share.toFixed(0)}%</span>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+          {rows.length > 0 && (
+            <tr>
+              <td style={{ ...DASH_TD_NAME, ...DASH_TOTAL_BORDER, font: dashNameFont(true) }}>합계</td>
+              <td style={{ ...DASH_TD_NUM, ...DASH_TOTAL_BORDER, font: "700 11px var(--font-body)" }}>{formatEokMan(totalAmount)}</td>
+              <td style={{ ...DASH_TD_NUM, ...DASH_TOTAL_BORDER, font: "700 11px var(--font-body)" }}>100%</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// 연도별 누적(1월~해당월) 전체 시장 규모 추이 — 한 해 = 한 라인
+function YearlyTrendChart({ series, months }) {
+  const [highlightYear, setHighlightYear] = React.useState(null);
+  const years = React.useMemo(() => Array.from(new Set(months.map((m) => m.slice(0, 4)))), [months]);
+  const byYear = years.map((year) => {
+    const yearMonths = months.filter((m) => m.startsWith(year)).sort();
+    let cum = 0;
+    const points = yearMonths.map((m) => {
+      let monthTotal = 0;
+      for (const s of series) monthTotal += (s.monthly.get(m)?.amount) || 0;
+      cum += monthTotal;
+      return { moy: m.slice(5, 7), cum, hasActivity: monthTotal > 0 };
+    });
+    return { year, points };
+  });
+
+  const W = 640, H = 300;
+  const padL = 70, padR = 20, padT = 20, padB = 30;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const xOf = (moy) => padL + ((Number(moy) - 1) / 11) * innerW;
+  const maxCum = Math.max(1, ...byYear.flatMap((y) => y.points.map((p) => p.cum)));
+  const yOf = (v) => padT + innerH - (v / maxCum) * innerH;
+
+  return (
+    <div style={{ flex: "1 1 420px", minWidth: 380 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+        {byYear.map((y, i) => {
+          const isHi = highlightYear === y.year;
+          const color = colorForYear(i, byYear.length);
+          return (
+            <button
+              key={y.year}
+              onClick={() => setHighlightYear(isHi ? null : y.year)}
+              style={{
+                all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+                padding: "2px 7px", borderRadius: "var(--radius-pill)",
+                background: isHi ? "var(--surface-page)" : "transparent",
+                border: isHi ? "1px solid var(--border-default)" : "1px solid transparent",
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: color, display: "inline-block" }} />
+              <span style={{ font: `${highlightYear && !isHi ? 400 : 700} 11px var(--font-body)`, color: "var(--text-secondary)" }}>{y.year}</span>
+            </button>
+          );
+        })}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }}>
+        {[0, 0.5, 1].map((f) => {
+          const y = padT + innerH - f * innerH;
+          return (
+            <g key={f}>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--border-subtle)" strokeWidth="1" />
+              <text x={padL - 8} y={y + 4} textAnchor="end" fontSize="12" fill="var(--text-secondary)">
+                {formatEokMan(maxCum * f)}
+              </text>
+            </g>
+          );
+        })}
+        {["01", "03", "05", "07", "09", "11"].map((m) => (
+          <text key={m} x={xOf(m)} y={H - padB + 18} textAnchor="middle" fontSize="12" fill="var(--text-secondary)">{Number(m)}월</text>
+        ))}
+        {byYear.map((y, i) => {
+          const color = colorForYear(i, byYear.length);
+          const dimmed = highlightYear && highlightYear !== y.year;
+          return (
+            <g key={y.year} opacity={dimmed ? 0.15 : 1}>
+              {/* 해당 월에 신규 납품이 없어 누적선이 평평해지는 구간은 점선으로 구분 */}
+              {y.points.slice(1).map((p, pi) => {
+                const prev = y.points[pi];
+                return (
+                  <line
+                    key={p.moy}
+                    x1={xOf(prev.moy)} y1={yOf(prev.cum)} x2={xOf(p.moy)} y2={yOf(p.cum)}
+                    stroke={color} strokeWidth={highlightYear === y.year ? 3 : 2}
+                    strokeDasharray={p.hasActivity ? undefined : "4,3"}
+                  />
+                );
+              })}
+              {y.points.map((p) => (
+                <circle key={p.moy} cx={xOf(p.moy)} cy={yOf(p.cum)} r={highlightYear === y.year ? 4 : 3} fill={color} />
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// 제조사 x 연도 점유율(%) 매트릭스 + 전체기간 합계 점유율
+function YearlyShareMatrix({ series, months }) {
+  const years = React.useMemo(() => Array.from(new Set(months.map((m) => m.slice(0, 4)))), [months]);
+
+  const yearTotalsByCompany = series.map((s) => {
+    const byYear = {};
+    for (const year of years) {
+      const yearMonths = months.filter((m) => m.startsWith(year));
+      byYear[year] = yearMonths.reduce((sum, m) => sum + ((s.monthly.get(m)?.amount) || 0), 0);
+    }
+    return { name: s.name, byYear, total: s.total };
+  });
+
+  const yearMarketTotal = {};
+  for (const year of years) {
+    yearMarketTotal[year] = yearTotalsByCompany.reduce((sum, r) => sum + r.byYear[year], 0);
+  }
+  const overallTotal = yearTotalsByCompany.reduce((sum, r) => sum + r.total, 0);
+
+  const rows = yearTotalsByCompany
+    .filter((r) => r.total > 0 || r.name.includes(OUR_COMPANY_MARK))
+    .sort((a, b) => b.total - a.total);
+
+  return (
+    <div style={{ flex: "1 1 380px", minWidth: 320 }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+        <thead>
+          <tr>
+            <th style={{ ...DASH_TH, textAlign: "left" }}>제조사</th>
+            {years.map((y) => (
+              <th key={y} style={{ ...DASH_TH, textAlign: "right" }}>{y}</th>
+            ))}
+            <th style={{ ...DASH_TH, textAlign: "right" }}>합계</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr><td colSpan={years.length + 2} style={{ padding: "10px 8px", font: "var(--text-body-sm)", color: "var(--text-tertiary)", textAlign: "center" }}>실적 없음</td></tr>
+          ) : rows.map((r) => {
+            const isOurs = r.name.includes(OUR_COMPANY_MARK);
+            return (
+              <tr key={r.name} style={{ background: isOurs ? "rgba(22,163,74,0.1)" : "transparent" }}>
+                <td style={{ ...DASH_TD_NAME, font: dashNameFont(isOurs) }} title={r.name}>{r.name}</td>
+                {years.map((y) => {
+                  const marketTotal = yearMarketTotal[y];
+                  const share = marketTotal > 0 ? (r.byYear[y] / marketTotal) * 100 : null;
+                  return (
+                    <td key={y} style={DASH_TD_NUM}>
+                      {share === null ? "-" : `${share.toFixed(0)}%`}
+                    </td>
+                  );
+                })}
+                <td style={{ ...DASH_TD_NUM, font: "700 11px var(--font-body)" }}>
+                  {overallTotal > 0 ? `${((r.total / overallTotal) * 100).toFixed(0)}%` : "-"}
+                </td>
+              </tr>
+            );
+          })}
+          {rows.length > 0 && (
+            <tr>
+              <td style={{ ...DASH_TD_NAME, ...DASH_TOTAL_BORDER, font: dashNameFont(true) }}>합계</td>
+              {years.map((y) => (
+                <td key={y} style={{ ...DASH_TD_NUM, ...DASH_TOTAL_BORDER, font: "700 11px var(--font-body)" }}>100%</td>
+              ))}
+              <td style={{ ...DASH_TD_NUM, ...DASH_TOTAL_BORDER, font: "700 11px var(--font-body)" }}>100%</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// 임원 보고용 큰 숫자 하나 + 라벨 (누적매출/점유율/경쟁사대비/전년대비)
+// 용어 정의를 "i" 아이콘 hover(title)로 보여준다 — 라벨만 보고 오해하기 쉬운 지표에 붙인다.
+function InfoDot({ text }) {
+  return (
+    <span
+      title={text}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: 13, height: 13, borderRadius: "50%", marginLeft: 4,
+        background: "var(--border-default)", color: "var(--text-tertiary)",
+        font: "700 9px var(--font-body)", cursor: "help", flexShrink: 0,
+      }}
+    >
+      i
+    </span>
+  );
+}
+
+function HeroStat({ label, value, sub, tone }) {
+  const color = tone === "good" ? OUR_COLOR : tone === "bad" ? "#dc2626" : "var(--text-primary)";
+  return (
+    <div>
+      <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", marginBottom: 2 }}>{label}</div>
+      <div style={{ font: "700 24px var(--font-display)", color, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      {sub && <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)" }}>{sub}</div>}
+    </div>
+  );
+}
+
+// 제조사별 실적 — 누적매출/점유율/전년대비를 한 표로 (중복되던 "전체 누적"과
+// "연도별 점유율"을 하나로 합친다)
+function ManufacturerTable({ rows, total, prevByName, thisByName, itemsByMfr, highlightName, onToggleHighlight }) {
+  return (
+    <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+      <thead>
+        <tr>
+          {["제조사", "보유 품목", "누적매출", "점유율", "전년대비"].map((c, i) => (
+            <th key={c} style={{ ...DASH_TH, textAlign: i === 0 ? "left" : "right" }}>
+              {c}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.length === 0 ? (
+          <tr><td colSpan={5} style={{ padding: "10px 8px", font: "var(--text-body-sm)", color: "var(--text-tertiary)", textAlign: "center" }}>실적 없음</td></tr>
+        ) : rows.map((r) => {
+          const isOurs = r.name.includes(OUR_COMPANY_MARK);
+          const share = total > 0 ? (r.amount / total) * 100 : 0;
+          const prevAmt = prevByName.get(r.name) || 0;
+          const thisAmt = thisByName.get(r.name) || 0;
+          const yoy = prevAmt > 0 ? ((thisAmt - prevAmt) / prevAmt) * 100 : (thisAmt > 0 ? null : 0);
+          const items = (itemsByMfr && itemsByMfr.get(r.name)) || [];
+          const isHi = highlightName === r.name;
+          return (
+            <tr
+              key={r.name}
+              onClick={() => onToggleHighlight && onToggleHighlight(r.name)}
+              style={{
+                background: isHi ? "var(--surface-muted)" : (isOurs ? "rgba(22,163,74,0.1)" : "transparent"),
+                outline: isHi ? "1px solid var(--border-default)" : "none",
+                outlineOffset: "-1px",
+                cursor: onToggleHighlight ? "pointer" : "default",
+              }}
+            >
+              <td style={{ ...DASH_TD_NAME, font: dashNameFont(isOurs || isHi) }} title={r.name}>
+                {r.name}
+              </td>
+              <td style={DASH_TD_NUM}>{items.length ? `${items.length}개` : "-"}</td>
+              <td style={DASH_TD_NUM}>{formatEokMan(r.amount)}</td>
+              <td style={DASH_TD_NUM}>{share.toFixed(0)}%</td>
+              <td style={{
+                ...DASH_TD_NUM,
+                color: yoy == null ? "var(--text-tertiary)" : yoy >= 0 ? OUR_COLOR : "#dc2626",
+              }}>
+                {yoy == null ? "신규" : `${yoy >= 0 ? "+" : ""}${yoy.toFixed(0)}%`}
+              </td>
+            </tr>
+          );
+        })}
+        {rows.length > 0 && (
+          <tr>
+            <td style={{ ...DASH_TD_NAME, ...DASH_TOTAL_BORDER, font: dashNameFont(true) }}>합계</td>
+            <td style={{ ...DASH_TD_NUM, ...DASH_TOTAL_BORDER, font: "700 11px var(--font-body)" }}>-</td>
+            <td style={{ ...DASH_TD_NUM, ...DASH_TOTAL_BORDER, font: "700 11px var(--font-body)" }}>{formatEokMan(total)}</td>
+            <td style={{ ...DASH_TD_NUM, ...DASH_TOTAL_BORDER, font: "700 11px var(--font-body)" }}>100%</td>
+            <td style={{ ...DASH_TD_NUM, ...DASH_TOTAL_BORDER, font: "700 11px var(--font-body)" }}>-</td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
+
+function CompetitorLineChart({ product, rows, mfrMap, items }) {
+  const [selectedMonthIdx, setSelectedMonthIdx] = React.useState(null); // 월별 막대 클릭 → 계약 목록 (0~11)
+  const [hoverIdx, setHoverIdx] = React.useState(null); // 누적/월별 차트가 공유하는 호버 월 인덱스 (0~11)
+  const [visible, setVisible] = React.useState({ ours: true, rival1: true, rival2: true, prevYear: true }); // 범례 클릭 토글
+
+  const months = React.useMemo(() => monthsSince2025(), []);
+  const series = React.useMemo(() => buildMonthlySeries(rows, mfrMap, months), [rows, mfrMap, months]);
+  const itemsByMfr = React.useMemo(() => itemsByManufacturer(items || []), [items]);
+
+  const lastMonth = months[months.length - 1];
+  const lastYear = lastMonth.slice(0, 4);
+  const yearNum = Number(lastYear);
+  const prevYearNum = yearNum - 1;
+  const uptoMonthIdx = Number(lastMonth.slice(5, 7)) - 1; // 0=1월 ... 11=12월, "기준일(마지막 데이터 월)"
+  const yearMonths = months.filter((m) => m.startsWith(lastYear));
+
+  const thisMonthStat = shareForPeriod(series, [lastMonth]);
+  const thisYearStat = shareForPeriod(series, yearMonths);
+
+  // 전년 동기 대비 — "올해 1월~이번달"과 "작년 1월~같은 달"을 비교한다.
+  const prevYearMonths = months.filter((m) => m.startsWith(String(prevYearNum)) && m.slice(5, 7) <= lastMonth.slice(5, 7));
+  const prevYearStat = prevYearMonths.length ? shareForPeriod(series, prevYearMonths) : null;
+  const yoy = prevYearStat && prevYearStat.ourAmt > 0
+    ? ((thisYearStat.ourAmt - prevYearStat.ourAmt) / prevYearStat.ourAmt) * 100
+    : null;
+  const prevByName = new Map((prevYearStat?.rows || []).map((r) => [r.name, r.amount]));
+  const thisByName = new Map(thisYearStat.rows.map((r) => [r.name, r.amount]));
+
+  const rivalRows = thisYearStat.rows.filter((r) => !r.name.includes(OUR_COMPANY_MARK));
+  const topRivalShare = rivalRows.length && thisYearStat.total > 0 ? (rivalRows[0].amount / thisYearStat.total) * 100 : 0;
+  const leaderGap = thisYearStat.share - topRivalShare;
+
+  const ourSeries = series.find((s) => s.name.includes(OUR_COMPANY_MARK));
+  const top2Rivals = rivalRows.slice(0, 2).map((r) => series.find((s) => s.name === r.name)).filter(Boolean);
+
+  // 아래 월별 막대에서 "자사 외 타사"를 선택해 보여줄 대상 — 제조사별 실적 표 행 클릭과 동기화
+  const [barFocus, setBarFocus] = React.useState(() => ourSeries?.name);
+  React.useEffect(() => {
+    if (!series.some((s) => s.name === barFocus)) setBarFocus(ourSeries?.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [series]);
+  const barFocusSeries = series.find((s) => s.name === barFocus) || ourSeries;
+  const isBarFocusOurs = !barFocusSeries || barFocusSeries === ourSeries;
+  const barFocusLabel = isBarFocusOurs ? "자사" : barFocusSeries.name;
+
+  // ── 누적 판매금액 꺾은선 데이터 ─────────────────────────────────
+  const oursCumThis = React.useMemo(() => cumulativeByCalendarMonth(ourSeries, yearNum, uptoMonthIdx), [ourSeries, yearNum, uptoMonthIdx]);
+  const oursCumPrev = React.useMemo(() => cumulativeByCalendarMonth(ourSeries, prevYearNum, 11), [ourSeries, prevYearNum]);
+  const rival1Cum = React.useMemo(() => top2Rivals[0] ? cumulativeByCalendarMonth(top2Rivals[0], yearNum, uptoMonthIdx) : [], [top2Rivals, yearNum, uptoMonthIdx]);
+  const rival2Cum = React.useMemo(() => top2Rivals[1] ? cumulativeByCalendarMonth(top2Rivals[1], yearNum, uptoMonthIdx) : [], [top2Rivals, yearNum, uptoMonthIdx]);
+  const barFocusCum = React.useMemo(() => cumulativeByCalendarMonth(barFocusSeries, yearNum, uptoMonthIdx), [barFocusSeries, yearNum, uptoMonthIdx]);
+
+  const oursEnd = oursCumThis[oursCumThis.length - 1];
+  const oursPrevAtCutoff = oursCumPrev[uptoMonthIdx]?.cum || 0;
+  const oursYoyAtCutoff = oursPrevAtCutoff > 0 ? ((oursEnd.cum - oursPrevAtCutoff) / oursPrevAtCutoff) * 100 : null;
+
+  // 두 차트(누적 꺾은선/월별 막대)가 완전히 같은 x좌표를 쓰도록 W·padL·padR을 동일하게 둔다.
+  const W = 660, padL = 55, padR = 134;
+  const H1 = 190, padT1 = 16, padB1 = 8;
+  const H2 = 132, padT2 = 8, padB2 = 26;
+  const innerW = W - padL - padR;
+  const innerH1 = H1 - padT1 - padB1;
+  const innerH2 = H2 - padT2 - padB2;
+  const xOf = (monthIdx) => padL + (monthIdx / 11) * innerW;
+  const maxCum1 = Math.max(
+    1,
+    oursEnd.cum, oursCumPrev[11]?.cum || 0,
+    rival1Cum[rival1Cum.length - 1]?.cum || 0, rival2Cum[rival2Cum.length - 1]?.cum || 0
+  );
+  const yOf1 = (v) => padT1 + innerH1 - (v / maxCum1) * innerH1;
+
+  function segmentsFor(points) {
+    const segs = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      segs.push({
+        key: `${points[i].monthIdx}-${points[i + 1].monthIdx}`,
+        x1: xOf(points[i].monthIdx), y1: yOf1(points[i].cum),
+        x2: xOf(points[i + 1].monthIdx), y2: yOf1(points[i + 1].cum),
+        dashed: points[i + 1].flat,
+      });
+    }
+    return segs;
+  }
+
+  const legendItems = [
+    { key: "ours", label: "자사", color: OUR_COLOR, dash: false, width: 3 },
+    top2Rivals[0] && { key: "rival1", label: top2Rivals[0].name, color: "#94a3b8", dash: false, width: 2 },
+    top2Rivals[1] && { key: "rival2", label: top2Rivals[1].name, color: "#cbd5e1", dash: false, width: 2 },
+    { key: "prevYear", label: `전년(${prevYearNum}) 동기`, color: "#64748b", dash: true, width: 2 },
+  ].filter(Boolean);
+
+  // 끝점 라벨 — 같은 x(기준월)에 몰리는 자사/경쟁사 라벨은 겹치지 않도록 y를 살짝 밀어낸다
+  const endLabels = [
+    visible.ours && { key: "ours", y: yOf1(oursEnd.cum), color: OUR_COLOR,
+      lines: [`자사 ${formatEokMan(oursEnd.cum)}`, oursYoyAtCutoff != null ? `전년 동기 대비 ${oursYoyAtCutoff >= 0 ? "+" : ""}${oursYoyAtCutoff.toFixed(0)}%` : null].filter(Boolean) },
+    visible.rival1 && top2Rivals[0] && { key: "rival1", y: yOf1(rival1Cum[rival1Cum.length - 1].cum), color: "#94a3b8",
+      lines: [`${top2Rivals[0].name} ${formatEokMan(rival1Cum[rival1Cum.length - 1].cum)}`] },
+    visible.rival2 && top2Rivals[1] && { key: "rival2", y: yOf1(rival2Cum[rival2Cum.length - 1].cum), color: "#cbd5e1",
+      lines: [`${top2Rivals[1].name} ${formatEokMan(rival2Cum[rival2Cum.length - 1].cum)}`] },
+  ].filter(Boolean).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < endLabels.length; i++) {
+    if (endLabels[i].y - endLabels[i - 1].y < 24) endLabels[i].y = endLabels[i - 1].y + 24;
+  }
+
+  // ── 월별 판매금액 막대 (기본 자사, 표에서 타사 선택 시 전환) ──────
+  function monthlyArrayFor(entitySeries) {
+    const out = [];
+    for (let m = 0; m <= uptoMonthIdx; m++) {
+      const mk = `${yearNum}-${String(m + 1).padStart(2, "0")}`;
+      const cell = entitySeries?.monthly.get(mk);
+      out.push({ monthIdx: m, monthKey: mk, amount: cell?.amount || 0, records: cell?.records || [] });
+    }
+    return out;
+  }
+  const oursMonthly = React.useMemo(() => monthlyArrayFor(ourSeries), [ourSeries, yearNum, uptoMonthIdx]);
+  const barFocusMonthly = React.useMemo(() => monthlyArrayFor(barFocusSeries), [barFocusSeries, yearNum, uptoMonthIdx]);
+  // 자사 점유율(해당 월 기준, 누적 아님) 계산용 — 전 제조사 그 달 합계
+  const totalMonthlyAll = React.useMemo(() => {
+    const out = [];
+    for (let m = 0; m <= uptoMonthIdx; m++) {
+      const mk = `${yearNum}-${String(m + 1).padStart(2, "0")}`;
+      let sum = 0;
+      for (const s of series) sum += s.monthly.get(mk)?.amount || 0;
+      out.push(sum);
+    }
+    return out;
+  }, [series, yearNum, uptoMonthIdx]);
+
+  const bandW = innerW / 12;
+  const maxMonthly2 = Math.max(1, ...barFocusMonthly.map((p) => p.amount));
+  const yOf2 = (v) => padT2 + innerH2 - (v / maxMonthly2) * innerH2;
+
+  const selectedRecords = selectedMonthIdx != null ? (barFocusMonthly[selectedMonthIdx]?.records || []) : [];
+
+  // ── 차트③ 분기별 자사 점유율(선택) ─────────────────────────────
+  const quarters = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]]
+    .map((idxs, qi) => {
+      const monthsInQ = idxs.filter((i) => i <= uptoMonthIdx).map((i) => `${yearNum}-${String(i + 1).padStart(2, "0")}`);
+      if (!monthsInQ.length) return null;
+      const stat = shareForPeriod(series, monthsInQ);
+      return { q: qi + 1, share: stat.share };
+    })
+    .filter(Boolean);
+  const W3 = 300, H3 = 110;
+  const padL3 = 28, padR3 = 20, padT3 = 18, padB3 = 22;
+  const innerW3 = W3 - padL3 - padR3, innerH3 = H3 - padT3 - padB3;
+  const maxShare3 = Math.max(10, ...quarters.map((q) => q.share));
+  const xOf3 = (qi) => padL3 + (quarters.length > 1 ? (qi / (quarters.length - 1)) * innerW3 : innerW3 / 2);
+  const yOf3 = (v) => padT3 + innerH3 - (v / maxShare3) * innerH3;
+
+  return (
+    <div style={{ marginBottom: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* 임원 보고용 헤드라인 — "우리 실적 → 경쟁사 대비 위치" 순서로 가장 먼저 보여준다 */}
+      <div>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ font: "700 16px var(--font-display)", color: "var(--text-primary)" }}>
+            펜타시큐리티 {PRODUCT_LABEL[product] || product} 조달 매출 현황
+          </span>
+          <span style={{ font: "var(--text-caption)", color: "var(--text-tertiary)" }}>조달 매출 기준 · {lastYear}.01~현재</span>
+        </div>
+        <div style={{ display: "flex", gap: 32, flexWrap: "wrap", margin: "14px 0" }}>
+          <HeroStat label={`${lastYear}년 누적 조달매출`} value={formatEokMan(thisYearStat.ourAmt)} />
+          <HeroStat
+            label={<>등록 품목 기준 조달 점유율<InfoDot text="구글시트에 등록된 물품식별번호와 그 납품요구 실적만을 집계한 값입니다. 나라장터 전체 시장 규모가 아니라, 이 대시보드가 추적 중인 등록 품목 범위 내에서의 점유율입니다." /></>}
+            value={`${thisYearStat.share.toFixed(1)}%`}
+            sub={`${thisYearStat.rows.length}개사 기준`}
+          />
+          <HeroStat label="경쟁사 대비" value={`${leaderGap >= 0 ? "+" : ""}${leaderGap.toFixed(1)}%p`} tone={leaderGap >= 0 ? "good" : "bad"} />
+          {yoy != null && (
+            <HeroStat label="전년 동기 대비" value={`${yoy >= 0 ? "+" : ""}${yoy.toFixed(1)}%`} tone={yoy >= 0 ? "good" : "bad"} />
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap" }}>
+          {thisYearStat.rows.map((r, i) => {
+            const isOurs = r.name.includes(OUR_COMPANY_MARK);
+            const share = thisYearStat.total > 0 ? (r.amount / thisYearStat.total) * 100 : 0;
+            return (
+              <span key={r.name} style={{ display: "flex", alignItems: "baseline" }}>
+                {i > 0 && <span style={{ color: "var(--border-default)", margin: "0 10px", font: "12px var(--font-body)" }}>│</span>}
+                <span style={{ font: isOurs ? "700 12px var(--font-body)" : "500 12px var(--font-body)", color: isOurs ? OUR_COLOR : "var(--text-secondary)" }}>
+                  {r.name} {share.toFixed(0)}%
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16, alignItems: "stretch" }}>
+        <Panel title="판매금액 추이">
+          {series.length === 0 ? (
+            <div style={{ font: "var(--text-body-sm)", color: "var(--text-tertiary)", padding: "12px 0" }}>
+              납품요구 데이터가 없습니다.
+            </div>
+          ) : (
+            <>
+              {/* 범례 — 클릭하면 바로 해당 선이 켜짐/꺼짐 (경쟁사 표 등 다른 곳을 조작할 필요 없음) */}
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 4 }}>
+                {legendItems.map((it) => (
+                  <button
+                    key={it.key}
+                    onClick={() => setVisible((v) => ({ ...v, [it.key]: !v[it.key] }))}
+                    style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, opacity: visible[it.key] ? 1 : 0.35 }}
+                  >
+                    <span style={{ width: 14, height: 0, borderTop: `3px ${it.dash ? "dashed" : "solid"} ${it.color}`, display: "inline-block" }} />
+                    <span style={{ font: "var(--text-caption)", color: "var(--text-secondary)", whiteSpace: "nowrap", maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {it.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", marginBottom: 4 }}>
+                아래 막대: <strong style={{ color: isBarFocusOurs ? OUR_COLOR : "var(--text-primary)" }}>{barFocusLabel}</strong> 월별 판매금액 — 제조사별 실적 표에서 다른 제조사를 클릭하면 전환됩니다
+              </div>
+
+              {/* 누적 판매금액 꺾은선 + 월별 판매금액 막대를 한 hoverIdx로 묶어 세로 가이드선을 함께 보여준다 */}
+              <div onMouseLeave={() => setHoverIdx(null)}>
+                <svg viewBox={`0 0 ${W} ${H1}`} style={{ width: "100%", height: "auto", overflow: "visible", display: "block" }}>
+                  {[0, 0.5, 1].map((f) => {
+                    const y = padT1 + innerH1 - f * innerH1;
+                    return (
+                      <g key={f}>
+                        <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--border-subtle)" strokeWidth="1" />
+                        <text x={padL - 8} y={y + 4} textAnchor="end" fontSize="11" fill="var(--text-secondary)">{formatEokMan(maxCum1 * f)}</text>
+                      </g>
+                    );
+                  })}
+
+                  {/* 호버 감지 밴드 (1~12월 고정 12칸) */}
+                  {Array.from({ length: 12 }, (_, i) => i).map((i) => (
+                    <rect key={`hb-${i}`} x={xOf(i) - innerW / 22} y={padT1} width={innerW / 11} height={innerH1} fill="transparent" onMouseEnter={() => setHoverIdx(i)} />
+                  ))}
+
+                  {/* 전년 동기 누적 — 회색 점선, 12월까지 */}
+                  {visible.prevYear && segmentsFor(oursCumPrev).map((s) => (
+                    <line key={`py-${s.key}`} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#64748b" strokeWidth="2" strokeDasharray="5,4" strokeLinecap="round" />
+                  ))}
+                  {/* 타사 상위 2개 — 회색 2톤 (평평한 구간은 점선) */}
+                  {visible.rival2 && top2Rivals[1] && segmentsFor(rival2Cum).map((s) => (
+                    <line key={`r2-${s.key}`} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#cbd5e1" strokeWidth="2" strokeDasharray={s.dashed ? "4,3" : "none"} strokeLinecap="round" />
+                  ))}
+                  {visible.rival1 && top2Rivals[0] && segmentsFor(rival1Cum).map((s) => (
+                    <line key={`r1-${s.key}`} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#94a3b8" strokeWidth="2" strokeDasharray={s.dashed ? "4,3" : "none"} strokeLinecap="round" />
+                  ))}
+                  {/* 자사 — 초록, 굵게 (평평한 구간은 점선) */}
+                  {visible.ours && segmentsFor(oursCumThis).map((s) => (
+                    <line key={`o-${s.key}`} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={OUR_COLOR} strokeWidth="3" strokeDasharray={s.dashed ? "5,3" : "none"} strokeLinecap="round" />
+                  ))}
+
+                  {/* 끝점 라벨 */}
+                  {endLabels.map((l) => (
+                    <g key={l.key}>
+                      {l.lines.map((line, li) => (
+                        <text key={li} x={xOf(uptoMonthIdx) + 8} y={l.y + li * 12 - (l.lines.length > 1 ? 4 : 0)} fontSize="11" fontWeight={li === 0 ? 700 : 400} fill={l.color}>{line}</text>
+                      ))}
+                    </g>
+                  ))}
+                  {visible.prevYear && (
+                    <text x={xOf(11) + 8} y={yOf1(oursCumPrev[11]?.cum || 0) + 4} fontSize="11" fill="#64748b">전년 {formatEokMan(oursCumPrev[11]?.cum || 0)}</text>
+                  )}
+
+                  {hoverIdx != null && (
+                    <line x1={xOf(hoverIdx)} y1={padT1} x2={xOf(hoverIdx)} y2={padT1 + innerH1} stroke="var(--text-tertiary)" strokeWidth="1" strokeDasharray="3,3" pointerEvents="none" />
+                  )}
+
+                  {/* 통합 툴팁 — 당월/누적(막대 포커스 기준) + 자사 점유율(해당 월) */}
+                  {hoverIdx != null && (() => {
+                    const monthlyAmt = barFocusMonthly[hoverIdx]?.amount;
+                    const cumAmt = barFocusCum[hoverIdx]?.cum;
+                    const totalThatMonth = totalMonthlyAll[hoverIdx] || 0;
+                    const ourShareThatMonth = totalThatMonth > 0 ? ((oursMonthly[hoverIdx]?.amount || 0) / totalThatMonth) * 100 : null;
+                    const tipLines = [
+                      monthlyAmt != null && `당월 ${barFocusLabel} ${formatEokMan(monthlyAmt)}`,
+                      cumAmt != null && `누적 ${barFocusLabel} ${formatEokMan(cumAmt)}`,
+                      ourShareThatMonth != null && `자사 점유율(해당 월) ${ourShareThatMonth.toFixed(0)}%`,
+                    ].filter(Boolean);
+                    if (tipLines.length === 0) return null;
+                    const tipW = 190, tipH = 24 + tipLines.length * 16 + 6;
+                    const rawX = xOf(hoverIdx) + 12;
+                    const tipX = rawX + tipW > W - padR ? xOf(hoverIdx) - tipW - 12 : rawX;
+                    return (
+                      <g pointerEvents="none">
+                        <rect x={tipX} y={padT1} width={tipW} height={tipH} rx="6" fill="var(--surface-card)" stroke="var(--border-default)" />
+                        <text x={tipX + 10} y={padT1 + 17} fontSize="11" fontWeight="700" fill="var(--text-primary)">{hoverIdx + 1}월</text>
+                        {tipLines.map((line, idx) => (
+                          <text key={idx} x={tipX + 10} y={padT1 + 34 + idx * 16} fontSize="10" fill="var(--text-secondary)">{line}</text>
+                        ))}
+                      </g>
+                    );
+                  })()}
+                </svg>
+
+                <svg viewBox={`0 0 ${W} ${H2}`} style={{ width: "100%", height: "auto", overflow: "visible", display: "block" }}>
+                  {[0, 1].map((f) => {
+                    const y = padT2 + innerH2 - f * innerH2;
+                    return (
+                      <g key={f}>
+                        <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="var(--border-subtle)" strokeWidth="1" />
+                        <text x={padL - 8} y={y + 4} textAnchor="end" fontSize="11" fill="var(--text-secondary)">{formatEokMan(maxMonthly2 * f)}</text>
+                      </g>
+                    );
+                  })}
+                  {Array.from({ length: 12 }, (_, i) => i).map((i) => {
+                    if (i % 2 !== 0 && i !== 11) return null;
+                    const label = i === 0 ? `${lastYear}년` : `${i + 1}월`;
+                    return <text key={i} x={xOf(i)} y={H2 - padB2 + 18} textAnchor="middle" fontSize="11" fill="var(--text-secondary)">{label}</text>;
+                  })}
+
+                  {/* 호버 감지 밴드 (위 차트와 동일한 hoverIdx 공유) */}
+                  {Array.from({ length: 12 }, (_, i) => i).map((i) => (
+                    <rect key={`hb2-${i}`} x={xOf(i) - innerW / 22} y={padT2} width={innerW / 11} height={innerH2} fill="transparent" onMouseEnter={() => setHoverIdx(i)} />
+                  ))}
+
+                  {barFocusMonthly.map((p) => {
+                    const y = yOf2(p.amount);
+                    const barW = Math.max(2, bandW * 0.55);
+                    const isSelected = selectedMonthIdx === p.monthIdx;
+                    return (
+                      <rect
+                        key={p.monthKey} x={xOf(p.monthIdx) - barW / 2} y={y} width={barW} height={Math.max(0, padT2 + innerH2 - y)}
+                        fill={isBarFocusOurs ? OUR_COLOR : "#94a3b8"} opacity={isSelected || hoverIdx === p.monthIdx ? 1 : 0.75} rx={2} style={{ cursor: "pointer" }}
+                        onClick={() => setSelectedMonthIdx(isSelected ? null : p.monthIdx)}
+                      >
+                        <title>{`${p.monthIdx + 1}월 · ${p.amount.toLocaleString()}원`}</title>
+                      </rect>
+                    );
+                  })}
+
+                  {hoverIdx != null && (
+                    <line x1={xOf(hoverIdx)} y1={padT2} x2={xOf(hoverIdx)} y2={padT2 + innerH2} stroke="var(--text-tertiary)" strokeWidth="1" strokeDasharray="3,3" pointerEvents="none" />
+                  )}
+                </svg>
+              </div>
+
+              {selectedMonthIdx != null && (
+                <div style={{ marginTop: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <div style={{ font: "600 13px var(--font-body)", color: "var(--text-primary)" }}>
+                      {barFocusLabel} · {selectedMonthIdx + 1}월 계약 목록 ({selectedRecords.length}건)
+                    </div>
+                    <button onClick={() => setSelectedMonthIdx(null)} style={{ all: "unset", cursor: "pointer", font: "var(--text-caption)", color: "var(--text-tertiary)" }}>닫기 ✕</button>
+                  </div>
+                  <div style={{ border: "1px solid var(--border-default)", borderRadius: "var(--radius-md)", maxHeight: 220, overflow: "auto" }}>
+                    <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                      <thead>
+                        <tr>
+                          {["납품요구일자", "납품요구번호", "수요기관", "계약번호", "물품식별명", "납품금액"].map((col) => (
+                            <th key={col} style={{ position: "sticky", top: 0, background: "var(--surface-muted)", borderBottom: "1px solid var(--border-default)", padding: "8px 10px", font: "600 11px var(--font-body)", color: "var(--text-secondary)", textAlign: "left", whiteSpace: "nowrap" }}>{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedRecords.map((r, i) => (
+                          <tr key={i}>
+                            <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["납품요구일자"]}</td>
+                            <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["납품요구번호"]}</td>
+                            <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)" }}>{r["수요기관"]}</td>
+                            <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["계약번호"]}</td>
+                            <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)" }}>{r["물품식별명"]}</td>
+                            <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "600 var(--text-body-sm)", whiteSpace: "nowrap", textAlign: "right" }}>{parseAmount(r["납품금액"]).toLocaleString()}원</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </Panel>
+
+        <Panel title="제조사별 실적">
+          <ManufacturerTable
+            rows={thisYearStat.rows} total={thisYearStat.total} prevByName={prevByName} thisByName={thisByName} itemsByMfr={itemsByMfr}
+            highlightName={barFocus}
+            onToggleHighlight={(name) => setBarFocus(name === barFocus ? ourSeries?.name : name)}
+          />
+        </Panel>
+      </div>
+
+      {/* 상세 분석 — 현재 월 / 올해 누적 / 연도별 점유율 / (선택)분기별 자사 점유율 */}
+      <SectionLabel>상세 분석</SectionLabel>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16, alignItems: "stretch" }}>
+        <Panel title={`${lastYear}년 ${Number(lastMonth.slice(5, 7))}월`}>
+          <PeriodTable title={null} rows={thisMonthStat.rows} />
+        </Panel>
+        <Panel title={`${lastYear}년 누적`}>
+          <PeriodTable title={null} rows={thisYearStat.rows} />
+        </Panel>
+        <Panel title="연도별 점유율 현황">
+          <YearlyShareMatrix series={series} months={months} />
+        </Panel>
+        <Panel title="분기별 자사 점유율">
+          {quarters.length === 0 ? (
+            <div style={{ font: "var(--text-body-sm)", color: "var(--text-tertiary)" }}>데이터 없음</div>
+          ) : (
+            <svg viewBox={`0 0 ${W3} ${H3}`} style={{ width: "100%", height: "auto", overflow: "visible" }}>
+              <line x1={padL3} y1={padT3 + innerH3} x2={W3 - padR3} y2={padT3 + innerH3} stroke="var(--border-subtle)" strokeWidth="1" />
+              {quarters.map((q, i) => i > 0 && (
+                <line key={`l-${q.q}`} x1={xOf3(i - 1)} y1={yOf3(quarters[i - 1].share)} x2={xOf3(i)} y2={yOf3(q.share)} stroke={OUR_COLOR} strokeWidth="2.5" strokeLinecap="round" />
+              ))}
+              {quarters.map((q, i) => (
+                <g key={q.q}>
+                  <circle cx={xOf3(i)} cy={yOf3(q.share)} r="3.5" fill={OUR_COLOR} />
+                  <text x={xOf3(i)} y={yOf3(q.share) - 9} textAnchor="middle" fontSize="11" fontWeight="700" fill={OUR_COLOR}>{q.share.toFixed(0)}%</text>
+                  <text x={xOf3(i)} y={H3 - padB3 + 16} textAnchor="middle" fontSize="11" fill="var(--text-secondary)">{q.q}분기</text>
+                </g>
+              ))}
+            </svg>
+          )}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function IsignGroupTabs({ group, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+      {ISIGN_GROUPS.map((g) => {
+        const isActive = g === group;
+        return (
+          <button
+            key={g}
+            onClick={() => onChange(g)}
+            style={{
+              all: "unset", cursor: "pointer", padding: "6px 14px",
+              borderRadius: "var(--radius-pill)",
+              background: isActive ? "var(--surface-muted)" : "transparent",
+              border: isActive ? "1px solid var(--border-default)" : "1px solid transparent",
+              font: isActive ? "700 12px var(--font-body)" : "500 12px var(--font-body)",
+              color: isActive ? "var(--text-primary)" : "var(--text-tertiary)",
+            }}
+          >
+            {g}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CompetitorComparePanel({ deliveryByProduct, itemsByProduct, isignGroupDelivery }) {
+  const [tab, setTab] = React.useState(PRODUCT_TABS[0]);
+  const [isignGroup, setIsignGroup] = React.useState(ISIGN_GROUPS[0]);
+
+  const isIsign = tab === "iSIGN";
+  const rows = isIsign ? (isignGroupDelivery[isignGroup] || []) : (deliveryByProduct[tab] || []);
+  const items = isIsign
+    ? (itemsByProduct["iSIGN"] || []).filter((r) => isignGroupForDetail(r["세부분류"]) === isignGroup)
+    : (itemsByProduct[tab] || []);
+  const mfrMap = manufacturerById(items);
+  const chartLabel = isIsign ? `iSIGN · ${isignGroup}` : tab;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+        <span style={{
+          font: "600 12px var(--font-body)", color: "var(--text-secondary)",
+          background: "var(--surface-muted)", borderRadius: "var(--radius-pill)",
+          padding: "3px 10px", border: "1px solid var(--border-default)",
+        }}>
+          경쟁사 비교
+        </span>
+        <span style={{ font: "var(--text-body-sm)", color: "var(--text-tertiary)" }}>
+          제조사 기준 · 2025.01~
+        </span>
+      </div>
+
+      <ProductTabs tab={tab} onChange={setTab} />
+      {isIsign && <IsignGroupTabs group={isignGroup} onChange={setIsignGroup} />}
+
+      <CompetitorLineChart key={chartLabel} product={chartLabel} rows={rows} mfrMap={mfrMap} items={items} />
+    </div>
+  );
+}
+
+const EMPTY_BY_TAB = { "D.AMO": [], "WAPPLES": [], "iSIGN": [] };
+
+// 제품별 식별 색 — 자사 강조(초록)와는 별개로, "어느 제품인지"를 막대에서 구분하기 위한 색.
+const PRODUCT_CHART_COLORS = { "WAPPLES": "#2563eb", "D.AMO": "#7c3aed", "iSIGN": "#ea580c", "기타": "#94a3b8" };
+
+function parseIsoDate(v) {
+  const s = String(v ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(Number(s.slice(0, 4)), Number(s.slice(5, 7)) - 1, Number(s.slice(8, 10)));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function daysBetween(a, b) {
+  return Math.round((b - a) / 86400000);
+}
+function isoDateLabel(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function InsightBanner({ text }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "flex-start", gap: 10,
+      background: "rgba(22,163,74,0.08)", border: "1px solid rgba(22,163,74,0.25)",
+      borderRadius: "var(--radius-lg)", padding: "12px 16px", marginBottom: 20,
+    }}>
+      <span style={{ font: "700 13px var(--font-body)", color: OUR_COLOR, flexShrink: 0 }}>AI 요약</span>
+      <span style={{ font: "var(--text-body-sm)", color: "var(--text-primary)" }}>{text}</span>
+    </div>
+  );
+}
+
+function KpiCard({ label, value, sub, tone }) {
+  const color = tone === "good" ? OUR_COLOR : tone === "bad" ? "#dc2626" : "var(--text-primary)";
+  return (
+    <div style={{
+      background: "var(--surface-card)", border: "1px solid var(--border-default)",
+      borderRadius: "var(--radius-xl)", padding: "18px 20px", flex: "1 1 220px", minWidth: 200,
+    }}>
+      <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", marginBottom: 8 }}>{label}</div>
+      <div style={{ font: "700 26px var(--font-display)", color, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      {sub && <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function NewItemsDashboard({ rawItems, deliveryByProduct }) {
+  const [selectedMonth, setSelectedMonth] = React.useState(null);
+
+  const today = React.useMemo(() => new Date(), []);
+
+  const validItems = React.useMemo(() => rawItems.filter((r) => parseIsoDate(r["등록일자"])), [rawItems]);
+  const missingDateItems = React.useMemo(() => rawItems.filter((r) => !parseIsoDate(r["등록일자"])), [rawItems]);
+  const unmappedMfrItems = React.useMemo(() => validItems.filter((r) => !(r["제조사명"] || "").trim()), [validItems]);
+
+  const allDeliveryRows = React.useMemo(() => [
+    ...(deliveryByProduct["WAPPLES"] || []),
+    ...(deliveryByProduct["D.AMO"] || []),
+    ...(deliveryByProduct["iSIGN"] || []),
+  ], [deliveryByProduct]);
+
+  // 미매핑 거래 — 납품요구 건의 물품식별번호가 품목 데이터(제조사명)에 없는 경우.
+  // 기존 "제조사별 실적" 로직은 이럴 때 납품업체명으로 대체했지만, 신규 품목 현황에서는
+  // 그 대체를 하지 않고 "미매핑"으로 따로 분리해 눈에 띄게 한다.
+  const itemMfrMap = React.useMemo(() => manufacturerById(rawItems), [rawItems]);
+  const unmappedDelivery = React.useMemo(() => {
+    let count = 0, amount = 0;
+    for (const r of allDeliveryRows) {
+      const id = (r["물품식별번호"] || "").trim();
+      if (!id || !itemMfrMap.has(id)) { count += 1; amount += parseAmount(r["납품금액"]); }
+    }
+    return { count, amount };
+  }, [allDeliveryRows, itemMfrMap]);
+
+  const deliveryIdSet = React.useMemo(() => {
+    const set = new Set();
+    for (const r of allDeliveryRows) {
+      const id = (r["물품식별번호"] || "").trim();
+      if (id) set.add(id);
+    }
+    return set;
+  }, [allDeliveryRows]);
+
+  const firstDeliveryDateById = React.useMemo(() => {
+    const map = new Map();
+    for (const r of allDeliveryRows) {
+      const id = (r["물품식별번호"] || "").trim();
+      const d = parseYyyymmdd(r["납품요구일자"]);
+      if (!id || !d) continue;
+      const cur = map.get(id);
+      if (!cur || d < cur) map.set(id, d);
+    }
+    return map;
+  }, [allDeliveryRows]);
+
+  const monthOfItem = (r) => {
+    const d = parseIsoDate(r["등록일자"]);
+    return d ? monthKeyOf(d) : null;
+  };
+
+  // "이번 달" 대신 "최근 완결 월"을 기본 비교 단위로 — 월초 며칠은 이번 달 데이터가
+  // 거의 없어 전월 대비가 왜곡되므로, 그 기간에는 지난달을 기준으로 삼는다.
+  const isEarlyMonth = today.getDate() <= 3;
+  const kpiMonthDate = isEarlyMonth
+    ? new Date(today.getFullYear(), today.getMonth() - 1, 1)
+    : new Date(today.getFullYear(), today.getMonth(), 1);
+  const kpiMonthKey = monthKeyOf(kpiMonthDate);
+  const prevMonthKey = monthKeyOf(new Date(kpiMonthDate.getFullYear(), kpiMonthDate.getMonth() - 1, 1));
+  const isInProgress = !isEarlyMonth;
+
+  const kpiMonthCount = validItems.filter((r) => monthOfItem(r) === kpiMonthKey).length;
+  const prevMonthCount = validItems.filter((r) => monthOfItem(r) === prevMonthKey).length;
+  const momDelta = kpiMonthCount - prevMonthCount;
+
+  const d90 = new Date(today.getTime() - 90 * 86400000);
+  const items90 = validItems.filter((r) => parseIsoDate(r["등록일자"]) >= d90);
+  const ourItems90 = items90.filter((r) => (r["제조사명"] || "").includes(OUR_COMPANY_MARK));
+  const ourShare90 = items90.length > 0 ? (ourItems90.length / items90.length) * 100 : 0;
+  const deliveredItems90 = items90.filter((r) => deliveryIdSet.has((r["물품식별번호"] || "").trim()));
+  const conversionRate90 = items90.length > 0 ? (deliveredItems90.length / items90.length) * 100 : 0;
+
+  const months = React.useMemo(() => monthsSince2025(), []);
+  const monthlyBuckets = React.useMemo(() => {
+    const map = new Map();
+    for (const m of months) {
+      map.set(m, { "WAPPLES": { ours: 0, others: 0 }, "D.AMO": { ours: 0, others: 0 }, "iSIGN": { ours: 0, others: 0 }, "기타": { ours: 0, others: 0 }, total: 0 });
+    }
+    for (const r of validItems) {
+      const mk = monthOfItem(r);
+      if (!map.has(mk)) continue;
+      const bucket = map.get(mk);
+      const p = ["WAPPLES", "D.AMO", "iSIGN"].includes(r["제품명"]) ? r["제품명"] : "기타";
+      const isOurs = (r["제조사명"] || "").includes(OUR_COMPANY_MARK);
+      bucket[p][isOurs ? "ours" : "others"] += 1;
+      bucket.total += 1;
+    }
+    return map;
+  }, [validItems, months]);
+
+  const recent10 = React.useMemo(() => {
+    return [...validItems].sort((a, b) => (b["등록일자"] || "").localeCompare(a["등록일자"] || "")).slice(0, 10);
+  }, [validItems]);
+
+  const mfrRanking = React.useMemo(() => {
+    const map = new Map();
+    for (const r of items90) {
+      const mfr = (r["제조사명"] || "").trim() || "미매핑";
+      map.set(mfr, (map.get(mfr) || 0) + 1);
+    }
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 10);
+  }, [items90]);
+  const maxMfrCount = Math.max(1, ...mfrRanking.map((r) => r.count));
+
+  const conversionDays = React.useMemo(() => {
+    const days = [];
+    for (const r of validItems) {
+      const id = (r["물품식별번호"] || "").trim();
+      const regDate = parseIsoDate(r["등록일자"]);
+      const firstDlvr = firstDeliveryDateById.get(id);
+      if (regDate && firstDlvr) {
+        const diff = daysBetween(regDate, firstDlvr);
+        if (diff >= 0) days.push(diff);
+      }
+    }
+    return days;
+  }, [validItems, firstDeliveryDateById]);
+  const avgConversionDays = conversionDays.length ? Math.round(conversionDays.reduce((a, b) => a + b, 0) / conversionDays.length) : null;
+
+  const undeliveredItems = React.useMemo(
+    () => validItems.filter((r) => !deliveryIdSet.has((r["물품식별번호"] || "").trim())),
+    [validItems, deliveryIdSet]
+  );
+
+  const insightText =
+    `${isInProgress ? "진행 중인 이번 달" : "최근 완결 월"} 신규 품목 ${kpiMonthCount}건` +
+    `(전월 대비 ${momDelta >= 0 ? "+" : ""}${momDelta}건). ` +
+    `최근 90일 신규 품목 ${items90.length}건 중 자사 ${ourItems90.length}건(${ourShare90.toFixed(0)}%), ` +
+    `납품 전환율 ${conversionRate90.toFixed(0)}%.`;
+
+  const maxMonthTotal = Math.max(1, ...months.map((m) => monthlyBuckets.get(m).total));
+  const chartW = 900, chartH = 220, chPadL = 50, chPadR = 10, chPadT = 10, chPadB = 28;
+  const chInnerW = chartW - chPadL - chPadR, chInnerH = chartH - chPadT - chPadB;
+  const bandW = months.length > 0 ? chInnerW / months.length : chInnerW;
+
+  const selectedMonthItems = selectedMonth ? validItems.filter((r) => monthOfItem(r) === selectedMonth) : [];
+
+  return (
+    <div>
+      <InsightBanner text={insightText} />
+
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+        <KpiCard
+          label={isInProgress ? `신규 등록 · 진행 중(~${today.getMonth() + 1}/${today.getDate()})` : "신규 등록 · 최근 완결 월"}
+          value={`${kpiMonthCount}건`}
+          sub={`전월 대비 ${momDelta >= 0 ? "+" : ""}${momDelta}건`}
+          tone={momDelta > 0 ? "good" : momDelta < 0 ? "bad" : undefined}
+        />
+        <KpiCard label="최근 90일 신규 등록" value={`${items90.length}건`} />
+        <KpiCard label="자사 신규 비중 (최근 90일)" value={`${ourShare90.toFixed(0)}%`} sub={`${ourItems90.length}/${items90.length}건`} tone="good" />
+        <KpiCard label="신규 품목 납품 전환율 (최근 90일)" value={`${conversionRate90.toFixed(0)}%`} sub={`${deliveredItems90.length}/${items90.length}건 납품 발생`} />
+      </div>
+
+      {(missingDateItems.length > 0 || unmappedMfrItems.length > 0 || unmappedDelivery.count > 0) && (
+        <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", marginBottom: 16, display: "flex", gap: 16, flexWrap: "wrap" }}>
+          {missingDateItems.length > 0 && <span>⚠ 등록일 미상 {missingDateItems.length}건 제외</span>}
+          {unmappedMfrItems.length > 0 && <span>⚠ 제조사 미매핑 품목 {unmappedMfrItems.length}건</span>}
+          {unmappedDelivery.count > 0 && <span>⚠ 미매핑 거래 {unmappedDelivery.count}건 · {formatEokMan(unmappedDelivery.amount)}원</span>}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16, alignItems: "stretch", marginBottom: 24 }}>
+        <Panel title="월별 신규 등록 건수">
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 8 }}>
+            {[...PRODUCT_TABS, "기타"].map((p) => (
+              <span key={p} style={{ display: "flex", alignItems: "center", gap: 5, font: "var(--text-caption)", color: "var(--text-secondary)" }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: PRODUCT_CHART_COLORS[p], display: "inline-block" }} />
+                {p}
+              </span>
+            ))}
+            <span style={{ display: "flex", alignItems: "center", gap: 5, font: "var(--text-caption)", color: "var(--text-secondary)" }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: OUR_COLOR, display: "inline-block" }} />
+              자사 제조사분
+            </span>
+          </div>
+          <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: "100%", height: "auto" }}>
+            {[0, 0.5, 1].map((f) => {
+              const y = chPadT + chInnerH - f * chInnerH;
+              return (
+                <g key={f}>
+                  <line x1={chPadL} y1={y} x2={chartW - chPadR} y2={y} stroke="var(--border-subtle)" strokeWidth="1" />
+                  <text x={chPadL - 8} y={y + 4} textAnchor="end" fontSize="11" fill="var(--text-secondary)">{Math.round(maxMonthTotal * f)}</text>
+                </g>
+              );
+            })}
+            {months.map((m, i) => {
+              if (i % 2 !== 0 && i !== months.length - 1) return null;
+              const label = m.endsWith("-01") ? `${m.slice(0, 4)}년` : `${Number(m.slice(5, 7))}월`;
+              return <text key={m} x={chPadL + i * bandW + bandW / 2} y={chartH - chPadB + 18} textAnchor="middle" fontSize="11" fill="var(--text-secondary)">{label}</text>;
+            })}
+            {months.map((m) => {
+              const bucket = monthlyBuckets.get(m);
+              let yCursor = chPadT + chInnerH;
+              const x = chPadL + months.indexOf(m) * bandW;
+              const w = Math.max(2, bandW * 0.6);
+              const segs = [];
+              for (const p of [...PRODUCT_TABS, "기타"]) {
+                const seg = bucket[p];
+                if (seg.ours > 0) {
+                  const h = (seg.ours / maxMonthTotal) * chInnerH;
+                  yCursor -= h;
+                  segs.push(<rect key={`${m}-${p}-ours`} x={x + (bandW - w) / 2} y={yCursor} width={w} height={h} fill={OUR_COLOR} />);
+                }
+                if (seg.others > 0) {
+                  const h = (seg.others / maxMonthTotal) * chInnerH;
+                  yCursor -= h;
+                  segs.push(<rect key={`${m}-${p}-others`} x={x + (bandW - w) / 2} y={yCursor} width={w} height={h} fill={PRODUCT_CHART_COLORS[p]} />);
+                }
+              }
+              return (
+                <g key={m} style={{ cursor: bucket.total > 0 ? "pointer" : "default" }} onClick={() => bucket.total > 0 && setSelectedMonth(selectedMonth === m ? null : m)} opacity={selectedMonth && selectedMonth !== m ? 0.4 : 1}>
+                  <rect x={x} y={chPadT} width={bandW} height={chInnerH} fill="transparent" />
+                  {segs}
+                  <title>{`${monthLabel(m)} · 신규 ${bucket.total}건`}</title>
+                </g>
+              );
+            })}
+          </svg>
+
+          {selectedMonth && (
+            <div style={{ marginTop: 16, borderTop: "1px solid var(--border-subtle)", paddingTop: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <div style={{ font: "600 13px var(--font-body)", color: "var(--text-primary)" }}>
+                  {monthLabel(selectedMonth)} 신규 등록 품목 ({selectedMonthItems.length}건)
+                </div>
+                <button onClick={() => setSelectedMonth(null)} style={{ all: "unset", cursor: "pointer", font: "var(--text-caption)", color: "var(--text-tertiary)" }}>닫기 ✕</button>
+              </div>
+              <div style={{ border: "1px solid var(--border-default)", borderRadius: "var(--radius-md)", maxHeight: 220, overflow: "auto" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                  <thead>
+                    <tr>
+                      {["등록일", "제품", "제조사", "품목", "세부분류"].map((col) => (
+                        <th key={col} style={{ position: "sticky", top: 0, background: "var(--surface-muted)", borderBottom: "1px solid var(--border-default)", padding: "8px 10px", font: "600 11px var(--font-body)", color: "var(--text-secondary)", textAlign: "left", whiteSpace: "nowrap" }}>{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedMonthItems.map((r, i) => (
+                      <tr key={i}>
+                        <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["등록일자"]}</td>
+                        <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["제품명"] || "-"}</td>
+                        <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)", color: (r["제조사명"] || "").includes(OUR_COMPANY_MARK) ? OUR_COLOR : "var(--text-primary)", fontWeight: (r["제조사명"] || "").includes(OUR_COMPANY_MARK) ? 700 : 400 }}>{r["제조사명"] || "미매핑"}</td>
+                        <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)" }}>{r["품목"] || "-"}</td>
+                        <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "8px 10px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["세부분류"] || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="제조사별 신규 등록 랭킹 (최근 90일)">
+          {mfrRanking.length === 0 ? (
+            <div style={{ font: "var(--text-body-sm)", color: "var(--text-tertiary)" }}>최근 90일 신규 등록이 없습니다.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {mfrRanking.map((r) => {
+                const isOurs = r.name.includes(OUR_COMPANY_MARK);
+                return (
+                  <div key={r.name}>
+                    <div style={{ display: "flex", justifyContent: "space-between", font: "var(--text-caption)", marginBottom: 3 }}>
+                      <span style={{ color: isOurs ? OUR_COLOR : "var(--text-primary)", fontWeight: isOurs ? 700 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 150 }}>{r.name}</span>
+                      <span style={{ color: "var(--text-tertiary)", fontVariantNumeric: "tabular-nums" }}>{r.count}건</span>
+                    </div>
+                    <div style={{ height: 6, borderRadius: 3, background: "var(--border-subtle)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${(r.count / maxMfrCount) * 100}%`, background: isOurs ? OUR_COLOR : "#94a3b8", borderRadius: 3 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16, alignItems: "stretch", marginBottom: 24 }}>
+        <Panel title={`최근 등록 품목 (최신 ${recent10.length}건)`}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {recent10.length === 0 ? (
+              <div style={{ font: "var(--text-body-sm)", color: "var(--text-tertiary)" }}>등록된 품목이 없습니다.</div>
+            ) : recent10.map((r, i) => {
+              const regDate = parseIsoDate(r["등록일자"]);
+              const isNew = regDate && daysBetween(regDate, today) <= 30;
+              const isOurs = (r["제조사명"] || "").includes(OUR_COMPANY_MARK);
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: i < recent10.length - 1 ? "1px solid var(--border-subtle)" : "none" }}>
+                  <span style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", whiteSpace: "nowrap", width: 80, flexShrink: 0 }}>{r["등록일자"]}</span>
+                  <span style={{
+                    display: "inline-block", padding: "2px 7px", borderRadius: "var(--radius-pill)",
+                    background: PRODUCT_CHART_COLORS[r["제품명"]] || PRODUCT_CHART_COLORS["기타"], color: "#fff",
+                    font: "700 10px var(--font-body)", flexShrink: 0,
+                  }}>
+                    {r["제품명"] || "기타"}
+                  </span>
+                  <span style={{ font: "var(--text-body-sm)", color: isOurs ? OUR_COLOR : "var(--text-primary)", fontWeight: isOurs ? 700 : 400, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: 110, flexShrink: 0 }} title={r["제조사명"]}>
+                    {r["제조사명"] || "미매핑"}
+                  </span>
+                  <span style={{ font: "var(--text-body-sm)", color: "var(--text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r["품목"]}>
+                    {r["품목"] || "-"}
+                  </span>
+                  {isNew && (
+                    <span style={{ font: "700 9px var(--font-body)", color: "#fff", background: "#dc2626", padding: "2px 6px", borderRadius: "var(--radius-pill)", flexShrink: 0 }}>NEW</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+
+        <Panel title="신규 품목 전환 현황">
+          <div style={{ display: "flex", gap: 24, marginBottom: 16, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", marginBottom: 4 }}>등록→첫 납품 평균 소요일</div>
+              <div style={{ font: "700 22px var(--font-display)", color: "var(--text-primary)" }}>
+                {avgConversionDays != null ? `${avgConversionDays}일` : "데이터 없음"}
+              </div>
+              <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)" }}>{conversionDays.length}건 기준</div>
+            </div>
+            <div>
+              <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", marginBottom: 4 }}>미납품 품목</div>
+              <div style={{ font: "700 22px var(--font-display)", color: "#dc2626" }}>{undeliveredItems.length}건</div>
+              <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)" }}>전체 등록 {validItems.length}건 중</div>
+            </div>
+          </div>
+          <div style={{ border: "1px solid var(--border-default)", borderRadius: "var(--radius-md)", maxHeight: 200, overflow: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <thead>
+                <tr>
+                  {["등록일", "제품", "제조사", "품목"].map((col) => (
+                    <th key={col} style={{ position: "sticky", top: 0, background: "var(--surface-muted)", borderBottom: "1px solid var(--border-default)", padding: "7px 10px", font: "600 11px var(--font-body)", color: "var(--text-secondary)", textAlign: "left", whiteSpace: "nowrap" }}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {undeliveredItems.length === 0 ? (
+                  <tr><td colSpan={4} style={{ padding: "16px 10px", textAlign: "center", font: "var(--text-body-sm)", color: "var(--text-tertiary)" }}>미납품 품목이 없습니다.</td></tr>
+                ) : undeliveredItems.slice(0, 50).map((r, i) => (
+                  <tr key={i}>
+                    <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "7px 10px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["등록일자"]}</td>
+                    <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "7px 10px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["제품명"] || "-"}</td>
+                    <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "7px 10px", font: "var(--text-body-sm)", whiteSpace: "nowrap" }}>{r["제조사명"] || "미매핑"}</td>
+                    <td style={{ borderBottom: "1px solid var(--border-subtle)", padding: "7px 10px", font: "var(--text-body-sm)" }}>{r["품목"] || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {undeliveredItems.length > 50 && (
+            <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", marginTop: 6 }}>외 {undeliveredItems.length - 50}건 더 있음 (스크롤)</div>
+          )}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+// ── 로컬 임시 저장(물품식별번호 편집) ──────────────────────────────
+// 구글시트에 직접 쓰는 백엔드가 없어, 편집 화면의 추가/삭제는 이 브라우저의
+// localStorage에만 보존한다. 시트 자체에 반영하려면 별도의 Apps Script 웹앱 연동이
+// 필요하며, 이는 코드가 아닌 제안서로 분리해 전달한다.
+const LOCAL_OVERRIDES_KEY = "jodal_local_overrides_v1";
+function loadLocalOverrides() {
+  try {
+    const raw = localStorage.getItem(LOCAL_OVERRIDES_KEY);
+    if (!raw) return { additions: {}, removals: {} };
+    const parsed = JSON.parse(raw);
+    return { additions: parsed.additions || {}, removals: parsed.removals || {} };
+  } catch (e) {
+    return { additions: {}, removals: {} };
+  }
+}
+function saveLocalOverrides(overrides) {
+  try { localStorage.setItem(LOCAL_OVERRIDES_KEY, JSON.stringify(overrides)); } catch (e) { /* 조용히 무시 */ }
+}
+
+function maxDateStr(strs) {
+  let best = null;
+  for (const s of strs) {
+    if (!s) continue;
+    let d = null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) d = new Date(s);
+    else if (/^\d{8}$/.test(s)) d = new Date(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`);
+    if (d && !Number.isNaN(d.getTime()) && (!best || d > best)) best = d;
+  }
+  return best ? isoDateLabel(best) : null;
+}
+
+function LoadingSkeleton() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="skeleton-block" style={{ height: 80 }} />
+      <div style={{ display: "flex", gap: 14 }}>
+        <div className="skeleton-block" style={{ height: 240, flex: 1.6 }} />
+        <div className="skeleton-block" style={{ height: 240, flex: 1 }} />
+      </div>
+      <div className="skeleton-block" style={{ height: 160 }} />
+    </div>
+  );
+}
+
+function App() {
+  const [expanded, setExpanded] = React.useState({ "jodal-item": true, "item-id-mgmt": true });
+  const [active, setActive] = React.useState("new-items");
+  const [itemsByProduct, setItemsByProduct] = React.useState(EMPTY_BY_TAB);
+  const [rawItems, setRawItems] = React.useState([]);
+  const [deliveryByProduct, setDeliveryByProduct] = React.useState(EMPTY_BY_TAB);
+  const [isignGroupDelivery, setIsignGroupDelivery] = React.useState({});
+  const [dataAsOf, setDataAsOf] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+  const [reloadKey, setReloadKey] = React.useState(0);
+  const [localOverrides, setLocalOverrides] = React.useState(() => loadLocalOverrides());
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+
+    Promise.all([
+      fetchSheetCSV(TAB_GID.items),
+      fetchSheetCSV(TAB_GID["WAPPLES"]),
+      fetchSheetCSV(TAB_GID["D.AMO"]),
+      fetchSheetCSV(TAB_GID["iSIGN"]),
+      ...ISIGN_GROUPS.map((g) => fetchSheetCSV(ISIGN_GROUP_GID[g])),
+    ]).then(([items, wapples, damo, isign, ...isignGroups]) => {
+      if (cancelled) return;
+
+      validateColumns(items.headers, CONFIG.REQUIRED_COLUMNS.items, "품목 데이터");
+      validateColumns(wapples.headers, CONFIG.REQUIRED_COLUMNS.delivery, "WAPPLES 납품요구");
+      validateColumns(damo.headers, CONFIG.REQUIRED_COLUMNS.delivery, "D.AMO 납품요구");
+      validateColumns(isign.headers, CONFIG.REQUIRED_COLUMNS.delivery, "iSIGN 납품요구");
+      ISIGN_GROUPS.forEach((g, i) => validateColumns(isignGroups[i].headers, CONFIG.REQUIRED_COLUMNS.delivery, `iSIGN ${g} 납품요구`));
+
+      setRawItems(items.records);
+
+      const grouped = { "D.AMO": [], "WAPPLES": [], "iSIGN": [] };
+      for (const rec of items.records) {
+        if (grouped[rec["제품명"]]) grouped[rec["제품명"]].push(rec);
+      }
+      // 로컬 임시 추가/삭제 반영 — 시트에는 없지만 이 브라우저에서 추가한 건 붙이고,
+      // 이 브라우저에서 삭제한 건(시트에는 여전히 있어도) 화면에서 제외한다.
+      for (const tab of PRODUCT_TABS) {
+        const removedIds = new Set(localOverrides.removals[tab] || []);
+        const additions = (localOverrides.additions[tab] || []).filter((r) => !removedIds.has(r.물품식별번호));
+        grouped[tab] = [...grouped[tab].filter((r) => !removedIds.has(r.물품식별번호)), ...additions];
+      }
+      setItemsByProduct(grouped);
+
+      setDeliveryByProduct({ "WAPPLES": wapples.records, "D.AMO": damo.records, "iSIGN": isign.records });
+      const groupDelivery = {};
+      ISIGN_GROUPS.forEach((g, i) => { groupDelivery[g] = isignGroups[i].records; });
+      setIsignGroupDelivery(groupDelivery);
+
+      const allDlvrRecords = [...wapples.records, ...damo.records, ...isign.records, ...isignGroups.flatMap((g) => g.records)];
+      setDataAsOf(maxDateStr([
+        ...items.records.map((r) => r["조회일자"]),
+        ...allDlvrRecords.map((r) => r["조회일자"]),
+        ...allDlvrRecords.map((r) => r["납품요구일자"]),
+      ]));
+
+      setLoading(false);
+    }).catch((err) => {
+      if (cancelled) return;
+      setError(err.message || String(err));
+      setLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [reloadKey]);
+
+  const toggle = (id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const addRecord = (tab, record) => {
+    setItemsByProduct((prev) => ({ ...prev, [tab]: [...prev[tab], record] }));
+    setLocalOverrides((prev) => {
+      const next = { additions: { ...prev.additions, [tab]: [...(prev.additions[tab] || []), record] }, removals: prev.removals };
+      saveLocalOverrides(next);
+      return next;
+    });
+  };
+  const removeRecord = (tab, code) => {
+    setItemsByProduct((prev) => ({ ...prev, [tab]: prev[tab].filter((r) => r.물품식별번호 !== code) }));
+    setLocalOverrides((prev) => {
+      const existingAdds = prev.additions[tab] || [];
+      const wasLocalAddition = existingAdds.some((r) => r.물품식별번호 === code);
+      const nextAdditions = wasLocalAddition
+        ? { ...prev.additions, [tab]: existingAdds.filter((r) => r.물품식별번호 !== code) }
+        : prev.additions;
+      const nextRemovals = wasLocalAddition
+        ? prev.removals
+        : { ...prev.removals, [tab]: [...(prev.removals[tab] || []), code] };
+      const next = { additions: nextAdditions, removals: nextRemovals };
+      saveLocalOverrides(next);
+      return next;
+    });
+  };
+  const resetLocalOverrides = () => {
+    const empty = { additions: {}, removals: {} };
+    saveLocalOverrides(empty);
+    setLocalOverrides(empty);
+    setReloadKey((k) => k + 1);
+  };
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh" }}>
+      <div className="no-print" style={{
+        width: 260,
+        background: "var(--surface-sidebar)",
+        borderRight: "1px solid var(--border-subtle)",
+        padding: "25px 0 40px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 24,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "0 20px" }}>
+          <img src="assets/jodari-logo.png" alt="JODARI" style={{ height: 40, width: "auto" }} />
+        </div>
+
+        <div style={{ padding: "0 10px", display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{ padding: "4px 15px 8px", font: "var(--text-caption)", color: "var(--text-tertiary)", letterSpacing: 0.4, textTransform: "uppercase" }}>
+            메뉴
+          </div>
+          {MENU.map((node) => (
+            <NavNode key={node.id} node={node} expanded={expanded} onToggle={toggle} active={active} onSelect={setActive} />
+          ))}
+        </div>
+      </div>
+
+      <div className="app-content" style={{ flex: 1, padding: "40px", minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 10 }}>
+          <div>
+            {(() => {
+              const path = findMenuPath(MENU, active) || ["조달 품목 관리"];
+              const crumbs = path.slice(0, -1);
+              const title = path[path.length - 1];
+              return (
+                <>
+                  {crumbs.length > 0 && (
+                    <div style={{ font: "500 12px var(--font-body)", color: "var(--text-tertiary)", marginBottom: 4 }}>
+                      {crumbs.join(" > ")}
+                    </div>
+                  )}
+                  <div style={{ font: "700 22px var(--font-display)", color: "var(--text-primary)" }}>
+                    {title}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+          <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              onClick={() => window.print()}
+              style={{
+                all: "unset", cursor: "pointer", padding: "8px 16px",
+                borderRadius: "var(--radius-md)", border: "1px solid var(--border-button)",
+                font: "500 13px var(--font-body)", color: "var(--text-secondary)",
+              }}
+            >
+              PDF로 저장/인쇄
+            </button>
+            <button
+              onClick={() => setReloadKey((k) => k + 1)}
+              disabled={loading}
+              style={{
+                all: "unset", cursor: loading ? "default" : "pointer", padding: "8px 16px",
+                borderRadius: "var(--radius-md)", border: "1px solid var(--border-button)",
+                font: "500 13px var(--font-body)", color: "var(--text-secondary)",
+                opacity: loading ? 0.6 : 1,
+              }}
+            >
+              {loading ? "불러오는 중…" : "새로고침"}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ font: "var(--text-caption)", color: "var(--text-tertiary)", marginBottom: 18 }}>
+          데이터 기준일: {dataAsOf || "-"}
+        </div>
+
+        {error ? (
+          <div style={{
+            background: "var(--surface-card)", border: "1px solid var(--accent-red)",
+            borderRadius: "var(--radius-xl)", padding: 24,
+            font: "var(--text-body-sm)", color: "var(--accent-red)",
+          }}>
+            <div style={{ marginBottom: 14 }}>시트 데이터를 불러오지 못했습니다: {error}</div>
+            <button
+              onClick={() => setReloadKey((k) => k + 1)}
+              style={{
+                all: "unset", cursor: "pointer", padding: "8px 16px",
+                borderRadius: "var(--radius-md)", background: "var(--accent-red)",
+                font: "600 13px var(--font-body)", color: "#fff",
+              }}
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : loading ? (
+          <LoadingSkeleton />
+        ) : active === "new-items" ? (
+          <NewItemsDashboard rawItems={rawItems} deliveryByProduct={deliveryByProduct} />
+        ) : active === "item-id-search" ? (
+          <SearchResultTable recordsByTab={itemsByProduct} />
+        ) : active === "item-id-register" ? (
+          <IdentifierEditor recordsByTab={itemsByProduct} onAdd={addRecord} onRemove={removeRecord} localOverrides={localOverrides} onResetLocal={resetLocalOverrides} />
+        ) : active === "jodal-stats" ? (
+          <CompetitorComparePanel deliveryByProduct={deliveryByProduct} itemsByProduct={itemsByProduct} isignGroupDelivery={isignGroupDelivery} />
+        ) : (
+          <div style={{
+            background: "var(--surface-card)",
+            border: "1px solid var(--border-default)",
+            borderRadius: "var(--radius-xl)",
+            padding: 24,
+            font: "var(--text-body-sm)",
+            color: "var(--text-tertiary)",
+          }}>
+            1뎁스 [조달 품목 관리] → 2뎁스 [물품식별번호관리 / 조달통계] → 3뎁스 세부 항목 구조의
+            사이드바 메뉴 트리 프로토타입입니다. 좌측 메뉴를 클릭해 펼침/접힘과 선택 상태를 확인하세요.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
