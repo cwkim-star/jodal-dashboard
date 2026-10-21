@@ -4658,6 +4658,37 @@ function TrashPanel({
 
 // 일일 신규 품목의 세부분류 칸 — 바로 입력해서 저장 (Enter 또는 칸을 벗어나면 저장, Esc는 취소).
 // 같은 제품에서 이미 쓰는 세부분류를 목록으로 보여줘 표기가 흩어지지 않게 한다.
+// iSIGN 세부분류는 아래 8개 중에서만 고른다 — 앞 번호(01~04)가 세부 그룹(SSO/WA/PASS/OS 로그온)을 정한다
+const ISIGN_CATEGORIES = ["01. SSO/EAM, 통합인증", "02. PKI, 구간암호화/공인인증", "03-1. 인증 - OTP", "03-2. 인증 - 생체인증", "03-3. 인증 - PIN", "03-4. 인증 - 모바일간편인증", "03-5. 인증 - 민간인증서중계", "04. Windows OS 로그온 보안"];
+function IsignCategorySelect({
+  value,
+  onChange,
+  style
+}) {
+  const known = ISIGN_CATEGORIES.includes(value);
+  return /*#__PURE__*/React.createElement("select", {
+    value: known ? value : "",
+    onChange: e => onChange(e.target.value),
+    title: "iSIGN \uC138\uBD80\uBD84\uB958",
+    style: {
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "4px 6px",
+      borderRadius: 6,
+      font: "500 13px var(--font-body)",
+      border: `1px solid ${known ? "var(--border-button)" : "rgba(220,38,38,0.5)"}`,
+      background: "var(--surface-card)",
+      color: "var(--text-primary)",
+      ...style
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "",
+    disabled: true
+  }, value && !known ? `${value} (선택 필요)` : "세부분류 선택"), ISIGN_CATEGORIES.map(c => /*#__PURE__*/React.createElement("option", {
+    key: c,
+    value: c
+  }, c)));
+}
 function DetailCell({
   value,
   product,
@@ -4671,6 +4702,10 @@ function DetailCell({
   const commit = () => {
     if (v.trim() !== (value || "").trim()) onSave(v.trim());
   };
+  if (product === "iSIGN") return /*#__PURE__*/React.createElement(IsignCategorySelect, {
+    value: value || "",
+    onChange: c => onSave(c)
+  });
   return /*#__PURE__*/React.createElement("input", {
     value: v,
     list: listId,
@@ -4891,6 +4926,16 @@ function ItemManager({
         value: t
       }, t)));
     }
+    if (field === "세부분류" && editing.values["제품명"] === "iSIGN") {
+      return /*#__PURE__*/React.createElement(IsignCategorySelect, {
+        value: val,
+        onChange: set,
+        style: {
+          padding: "6px 8px",
+          font: "var(--text-body-sm)"
+        }
+      });
+    }
     return /*#__PURE__*/React.createElement("input", {
       style: st,
       value: val,
@@ -4912,6 +4957,8 @@ function ItemManager({
     return next;
   });
   const toggleSelectAll = () => setSelected(allSelected ? new Set() : new Set(filteredKeys));
+  // 일괄 정리 대상이 iSIGN이면(제품을 iSIGN으로 바꾸거나, 고른 품목이 모두 iSIGN) 세부분류를 목록에서 고른다
+  const bulkIsIsign = bulk.product === "iSIGN" || !bulk.product && selectedKeys.length > 0 && selectedKeys.every(k => items.find(r => itemKey(r) === k)?.["제품명"] === "iSIGN");
   const bulkApply = () => {
     const patch = {};
     if (bulk.product) patch["제품명"] = bulk.product;
@@ -5379,7 +5426,26 @@ function ItemManager({
   }, "\uC81C\uD488\uBA85 \uBCC0\uACBD \uC548 \uD568"), PRODUCT_TABS.map(t => /*#__PURE__*/React.createElement("option", {
     key: t,
     value: t
-  }, "\uC81C\uD488\uBA85 \u2192 ", t))), /*#__PURE__*/React.createElement("input", {
+  }, "\uC81C\uD488\uBA85 \u2192 ", t))), bulkIsIsign ? /*#__PURE__*/React.createElement("select", {
+    value: bulk.category,
+    onChange: e => setBulk({
+      ...bulk,
+      category: e.target.value
+    }),
+    style: {
+      padding: "7px 10px",
+      borderRadius: 6,
+      border: "1px solid var(--border-button)",
+      font: "var(--text-body-sm)",
+      width: 240,
+      background: "#fff"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "iSIGN \uC138\uBD80\uBD84\uB958 \uBCC0\uACBD \uC548 \uD568"), ISIGN_CATEGORIES.map(c => /*#__PURE__*/React.createElement("option", {
+    key: c,
+    value: c
+  }, c))) : /*#__PURE__*/React.createElement("input", {
     value: bulk.category,
     placeholder: "\uC138\uBD80\uBD84\uB958 \uC77C\uAD04 \uC785\uB825",
     onChange: e => setBulk({
