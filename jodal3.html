@@ -375,7 +375,9 @@ function MenuIcon({
     "new-items": "M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6",
     "item-id-manage": "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
     "item-id-by-vendor": "M3 21h18M5 21V7l7-4 7 4v14M9 10h1M14 10h1M9 14h1M14 14h1",
-    "bid-notices": "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"
+    "bid-notices": "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6",
+    "bid-keywords": "M3 12V4h8l10 10-8 8zM7.5 7.5h.01",
+    "user-roles": "M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6M22 19v-1a4 4 0 0 0-3-3.87M16 4.13a3 3 0 0 1 0 5.74"
   }[id];
   if (!d) return /*#__PURE__*/React.createElement(FolderIcon, null);
   return /*#__PURE__*/React.createElement("svg", {
@@ -425,19 +427,35 @@ function SidebarToggleIcon({
 const NAV_COLLAPSED_KEY = "jodal3_nav_collapsed";
 
 // depth: 1 = 최상위, 2 = 하위(리프)
+// admin: true = 관리자에게만 보이는 메뉴 (권한은 DB가 다시 확인하므로 화면을 우회해도 바꿀 수 없다)
 const MENU = [{
   id: "jodal-stats",
   label: "조달통계",
   depth: 1
 }, {
-  id: "item-id-manage",
-  label: "물품식별번호 관리",
+  id: "bid-notices",
+  label: "입찰공고",
   depth: 1
 }, {
-  id: "bid-notices",
-  label: "입찰공고 관리",
-  depth: 1
+  id: "item-id-manage",
+  label: "물품식별번호 관리",
+  depth: 1,
+  admin: true
+}, {
+  id: "bid-keywords",
+  label: "입찰 키워드 관리",
+  depth: 1,
+  admin: true
+}, {
+  id: "user-roles",
+  label: "사용자 권한",
+  depth: 1,
+  admin: true
 }];
+const ROLE_LABEL = {
+  admin: "관리자",
+  viewer: "이용자"
+};
 
 // ── 데이터 기준일 ─────────────────────────────
 // 데이터는 DB(Supabase)에서 실시간으로 읽으므로 기준일은 오늘(한국 시간)이다.
@@ -5920,12 +5938,220 @@ function KeywordPanel({
     }
   }, "\uD14C\uB450\uB9AC\uAC00 \uC788\uB294 \uD0A4\uC6CC\uB4DC\uB294 \uC9C1\uC811 \uCD94\uAC00\uD55C \uAC83\uC774\uC5D0\uC694. \uD0A4\uC6CC\uB4DC\uC5D0 \uB9C8\uC6B0\uC2A4\uB97C \uC62C\uB9AC\uBA74 \uB204\uAC00 \uB123\uC5C8\uB294\uC9C0 \uBCF4\uC5EC\uC694."));
 }
+function BidKeywordPage() {
+  const [lastChecked, setLastChecked] = React.useState(null);
+  React.useEffect(() => {
+    sb.from("app_state").select("value").eq("key", "bids").maybeSingle().then(({
+      data
+    }) => setLastChecked(data?.value?.last_checked || null));
+  }, []);
+  return /*#__PURE__*/React.createElement(KeywordPanel, {
+    lastChecked: lastChecked
+  });
+}
+function UserRolesPage({
+  me
+}) {
+  const [rows, setRows] = React.useState(null);
+  const [email, setEmail] = React.useState("");
+  const [role, setRole] = React.useState("admin");
+  const load = React.useCallback(() => {
+    sb.from("app_users").select("*").order("role").order("email").then(({
+      data,
+      error
+    }) => {
+      if (error) window.alert(`목록을 불러오지 못했습니다.\n${error.message}`);else setRows(data);
+    });
+  }, []);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  const fail = (what, e) => window.alert(`${what}하지 못했습니다.\n${String(e.message || e).includes("관리자가 최소") ? "관리자가 최소 한 명은 있어야 해요." : e.message}`);
+  const add = async () => {
+    const addr = email.trim().toLowerCase();
+    if (!addr.endsWith(STAFF_DOMAIN)) {
+      window.alert(`회사 메일(${STAFF_DOMAIN})만 등록할 수 있어요.`);
+      return;
+    }
+    const {
+      error
+    } = await sb.from("app_users").upsert({
+      email: addr,
+      role,
+      updated_by: me,
+      updated_at: new Date().toISOString()
+    });
+    if (error) return fail("등록", error);
+    setEmail("");
+    load();
+  };
+  const change = async (r, next) => {
+    if (r.email === me && next !== "admin" && !window.confirm("내 권한을 이용자로 바꾸면 이 화면에 다시 들어올 수 없어요. 바꿀까요?")) return;
+    const {
+      error
+    } = await sb.from("app_users").update({
+      role: next,
+      updated_by: me,
+      updated_at: new Date().toISOString()
+    }).eq("email", r.email);
+    if (error) return fail("변경", error);
+    load();
+  };
+  const remove = async r => {
+    if (!window.confirm(`${r.email}을 목록에서 뺄까요?\n회사 계정이라 로그인은 계속 되고, 이용자(조회만)로 바뀌어요.`)) return;
+    const {
+      error
+    } = await sb.from("app_users").delete().eq("email", r.email);
+    if (error) return fail("삭제", error);
+    load();
+  };
+  const card = {
+    background: "var(--surface-card)",
+    border: "1px solid var(--border-default)",
+    borderRadius: "var(--radius-xl)",
+    overflow: "hidden"
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...card,
+      padding: "16px 20px",
+      font: "500 14px var(--font-body)",
+      color: "var(--text-secondary)",
+      lineHeight: 1.7
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: "var(--text-primary)"
+    }
+  }, "\uC774\uC6A9\uC790"), ": \uD68C\uC0AC \uAD6C\uAE00 \uACC4\uC815(", STAFF_DOMAIN, ")\uC774\uBA74 \uB204\uAD6C\uB098 \uB85C\uADF8\uC778\uD574\uC11C \uC870\uB2EC\uD1B5\uACC4\xB7\uC785\uCC30\uACF5\uACE0\uB97C \uBCFC \uC218 \uC788\uC5B4\uC694. \uB530\uB85C \uB4F1\uB85D\uD560 \uD544\uC694 \uC5C6\uC5B4\uC694.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: "var(--text-primary)"
+    }
+  }, "\uAD00\uB9AC\uC790"), ": \uBB3C\uD488\uC2DD\uBCC4\uBC88\uD638 \uAD00\uB9AC, \uC785\uCC30 \uD0A4\uC6CC\uB4DC \uAD00\uB9AC, \uC0AC\uC6A9\uC790 \uAD8C\uD55C\uC744 \uBC14\uAFC0 \uC218 \uC788\uC5B4\uC694. \uC544\uB798 \uBAA9\uB85D\uC5D0\uC11C \uAD00\uB9AC\uC790\uB85C \uC9C0\uC815\uD55C \uC0AC\uB78C\uB9CC \uD574\uB2F9\uB3FC\uC694."), /*#__PURE__*/React.createElement("div", {
+    style: card
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      flexWrap: "wrap",
+      padding: "16px 20px",
+      borderBottom: "1px solid var(--border-subtle)"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: email,
+    onChange: e => setEmail(e.target.value),
+    placeholder: `name${STAFF_DOMAIN}`,
+    onKeyDown: e => {
+      if (e.key === "Enter" && !e.nativeEvent.isComposing) add();
+    },
+    style: {
+      flex: "1 1 260px",
+      maxWidth: 360,
+      padding: "8px 12px",
+      borderRadius: 8,
+      border: "1px solid var(--border-button)",
+      font: "500 14px var(--font-body)",
+      background: "var(--surface-card)",
+      color: "var(--text-primary)"
+    }
+  }), /*#__PURE__*/React.createElement("select", {
+    value: role,
+    onChange: e => setRole(e.target.value),
+    style: {
+      padding: "8px 10px",
+      borderRadius: 8,
+      border: "1px solid var(--border-button)",
+      font: "500 14px var(--font-body)",
+      background: "var(--surface-card)"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "admin"
+  }, "\uAD00\uB9AC\uC790"), /*#__PURE__*/React.createElement("option", {
+    value: "viewer"
+  }, "\uC774\uC6A9\uC790")), /*#__PURE__*/React.createElement("button", {
+    onClick: add,
+    disabled: !email.trim(),
+    style: actionButton("primary", !email.trim())
+  }, "\uB4F1\uB85D")), /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse"
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["계정", "권한", "바꾼 사람", "바꾼 시각", ""].map((c, i) => /*#__PURE__*/React.createElement("th", {
+    key: i,
+    style: ITEM_TH
+  }, c)))), /*#__PURE__*/React.createElement("tbody", null, rows === null ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: 5,
+    style: {
+      ...ITEM_TD,
+      textAlign: "center",
+      color: "var(--text-tertiary)"
+    }
+  }, "\uBD88\uB7EC\uC624\uB294 \uC911\u2026")) : rows.map(r => /*#__PURE__*/React.createElement("tr", {
+    key: r.email
+  }, /*#__PURE__*/React.createElement("td", {
+    style: ITEM_TD
+  }, r.email, r.email === me && /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--text-tertiary)"
+    }
+  }, " (\uB098)")), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    value: r.role,
+    onChange: e => change(r, e.target.value),
+    style: {
+      padding: "4px 8px",
+      borderRadius: 6,
+      border: "1px solid var(--border-button)",
+      font: "600 13px var(--font-body)",
+      background: "var(--surface-card)",
+      color: r.role === "admin" ? OUR_COLOR : "var(--text-secondary)"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "admin"
+  }, "\uAD00\uB9AC\uC790"), /*#__PURE__*/React.createElement("option", {
+    value: "viewer"
+  }, "\uC774\uC6A9\uC790"))), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      color: "var(--text-secondary)"
+    }
+  }, String(r.updated_by || "-").replace(STAFF_DOMAIN, "")), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      color: "var(--text-secondary)",
+      fontVariantNumeric: "tabular-nums"
+    }
+  }, kstText(r.updated_at)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => remove(r),
+    style: {
+      ...actionButton("danger"),
+      padding: "5px 12px",
+      font: "600 13px var(--font-body)"
+    }
+  }, "\uC0AD\uC81C"))))))));
+}
 function BidNoticePage({
   bids
 }) {
   const [tab, setTab] = React.useState("ALL");
   const [onlyOpen, setOnlyOpen] = React.useState(true);
-  const [showKeywords, setShowKeywords] = React.useState(false);
   const [lastChecked, setLastChecked] = React.useState(null);
   React.useEffect(() => {
     sb.from("app_state").select("value").eq("key", "bids").maybeSingle().then(({
@@ -5994,13 +6220,7 @@ function BidNoticePage({
       font: "500 13px var(--font-body)",
       color: "var(--text-tertiary)"
     }
-  }, "\uCD9C\uCC98: \uB098\uB77C\uC7A5\uD130 \uC785\uCC30\uACF5\uACE0", lastChecked ? ` · 마지막 확인 ${kstText(lastChecked).slice(5).replace("-", ".")}` : lastCollected ? ` · ${lastCollected.replace(/-/g, ".")} 업데이트` : ""), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setShowKeywords(v => !v),
-    style: chip(showKeywords),
-    title: "\uC5B4\uB5A4 \uB2E8\uC5B4\uB85C \uACF5\uACE0\uB97C \uBAA8\uC73C\uB294\uC9C0 \uBCF4\uACE0, \uC9C1\uC811 \uCD94\uAC00\xB7\uC0AD\uC81C"
-  }, "\uD0A4\uC6CC\uB4DC \uC124\uC815")), showKeywords && /*#__PURE__*/React.createElement(KeywordPanel, {
-    lastChecked: lastChecked
-  }), /*#__PURE__*/React.createElement("div", {
+  }, "\uCD9C\uCC98: \uB098\uB77C\uC7A5\uD130 \uC785\uCC30\uACF5\uACE0", lastChecked ? ` · 마지막 확인 ${kstText(lastChecked).slice(5).replace("-", ".")}` : lastCollected ? ` · ${lastCollected.replace(/-/g, ".")} 업데이트` : "")), /*#__PURE__*/React.createElement("div", {
     style: {
       background: "var(--surface-card)",
       border: "1px solid var(--border-default)",
@@ -6401,6 +6621,19 @@ function App() {
   }, []);
   const userEmail = session?.user?.email || "";
   const isStaff = userEmail.toLowerCase().endsWith(STAFF_DOMAIN);
+  const [role, setRole] = React.useState("viewer");
+  React.useEffect(() => {
+    if (!session || !isStaff) return;
+    sb.from("app_users").select("role").eq("email", userEmail.toLowerCase()).maybeSingle().then(({
+      data
+    }) => setRole(data?.role || "viewer"));
+  }, [session?.user?.id, isStaff]);
+  const isAdmin = role === "admin";
+  const menuFor = MENU.filter(m => isAdmin || !m.admin);
+  React.useEffect(() => {
+    // 권한이 없는 화면에 머물러 있으면 조달통계로
+    if (!menuFor.some(m => m.id === active)) setActive("jodal-stats");
+  }, [isAdmin, active]);
   React.useEffect(() => {
     if (!session || !isStaff) return;
     let cancelled = false;
@@ -6610,7 +6843,28 @@ function App() {
       letterSpacing: 0.4,
       textTransform: "uppercase"
     }
-  }, "\uBA54\uB274"), MENU.map(node => /*#__PURE__*/React.createElement(NavNode, {
+  }, "\uBA54\uB274"), menuFor.filter(m => !m.admin).map(node => /*#__PURE__*/React.createElement(NavNode, {
+    key: node.id,
+    node: node,
+    expanded: expanded,
+    onToggle: toggle,
+    active: active,
+    onSelect: setActive,
+    collapsed: navCollapsed
+  })), isAdmin && (navCollapsed ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 1,
+      background: "var(--border-subtle)",
+      margin: "10px 8px"
+    }
+  }) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "18px 15px 8px",
+      font: "var(--text-caption)",
+      color: "var(--text-tertiary)",
+      letterSpacing: 0.4
+    }
+  }, "\uAD00\uB9AC\uC790")), menuFor.filter(m => m.admin).map(node => /*#__PURE__*/React.createElement(NavNode, {
     key: node.id,
     node: node,
     expanded: expanded,
@@ -6628,7 +6882,18 @@ function App() {
       gap: 8
     }
   }, !navCollapsed && /*#__PURE__*/React.createElement("span", {
-    title: userEmail,
+    title: `${userEmail} · ${ROLE_LABEL[role]}`,
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "700 12px var(--font-body)",
+      color: isAdmin ? OUR_COLOR : "var(--text-tertiary)"
+    }
+  }, ROLE_LABEL[role]), /*#__PURE__*/React.createElement("span", {
     style: {
       font: "500 13px var(--font-body)",
       color: "var(--text-tertiary)",
@@ -6636,7 +6901,7 @@ function App() {
       textOverflow: "ellipsis",
       whiteSpace: "nowrap"
     }
-  }, userEmail), /*#__PURE__*/React.createElement("button", {
+  }, userEmail)), /*#__PURE__*/React.createElement("button", {
     onClick: signOut,
     title: "\uB85C\uADF8\uC544\uC6C3",
     "aria-label": "\uB85C\uADF8\uC544\uC6C3",
@@ -6736,7 +7001,7 @@ function App() {
   }, "\uB370\uC774\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911\uC785\uB2C8\uB2E4\u2026") : active === "new-items" ? /*#__PURE__*/React.createElement(NewItemsDashboard, {
     rawItems: activeItems,
     deliveryByProduct: deliveryByProduct
-  }) : active === "item-id-manage" ? /*#__PURE__*/React.createElement(ItemManager, {
+  }) : active === "item-id-manage" && isAdmin ? /*#__PURE__*/React.createElement(ItemManager, {
     items: PRODUCT_TABS.flatMap(t => sortedItemsByProduct[t]),
     pending: pendingItems,
     latestCollect: latestCollect,
@@ -6748,6 +7013,8 @@ function App() {
     onRestore: restoreItems
   }) : active === "bid-notices" ? /*#__PURE__*/React.createElement(BidNoticePage, {
     bids: rawBids
+  }) : active === "bid-keywords" && isAdmin ? /*#__PURE__*/React.createElement(BidKeywordPage, null) : active === "user-roles" && isAdmin ? /*#__PURE__*/React.createElement(UserRolesPage, {
+    me: userEmail.toLowerCase()
   }) : active === "item-id-by-vendor" ? /*#__PURE__*/React.createElement(VendorItemTable, {
     deliveryByProduct: deliveryByProduct,
     itemsByProduct: itemsByProduct
