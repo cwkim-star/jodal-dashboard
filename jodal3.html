@@ -490,8 +490,20 @@ const ISIGN_GROUP_GID = {
 // 세부분류 코드 접두어 -> iSIGN 그룹. (백엔드 sheets.py:_isign_group_for_detail 과 동일한 규칙)
 // 01 SSO/EAM(통합인증) / 02 PKI,구간암호화·공인인증(WA) / 03-* 2차인증·MFA류(PASS) / 04 Windows OS 로그온
 const ISIGN_GROUP_PREFIX = [["01", "SSO"], ["02", "WA"], ["03", "PASS"], ["04", "OS 로그온"]];
+// 세부분류 이름 -> iSIGN 그룹 (번호 없는 새 이름. 옛 번호 이름은 아래 접두어 규칙으로도 인식)
+const ISIGN_GROUP_BY_NAME = {
+  "SSO": "SSO",
+  "PKI": "WA",
+  "OTP": "PASS",
+  "생체인증": "PASS",
+  "PIN": "PASS",
+  "간편인증": "PASS",
+  "인증서중계": "PASS",
+  "OS 로그온": "OS 로그온"
+};
 function isignGroupForDetail(detail) {
   const d = (detail || "").trim();
+  if (ISIGN_GROUP_BY_NAME[d]) return ISIGN_GROUP_BY_NAME[d];
   for (const [prefix, group] of ISIGN_GROUP_PREFIX) {
     if (d.startsWith(prefix)) return group;
   }
@@ -4658,8 +4670,9 @@ function TrashPanel({
 
 // 일일 신규 품목의 세부분류 칸 — 바로 입력해서 저장 (Enter 또는 칸을 벗어나면 저장, Esc는 취소).
 // 같은 제품에서 이미 쓰는 세부분류를 목록으로 보여줘 표기가 흩어지지 않게 한다.
-// iSIGN 세부분류는 아래 8개 중에서만 고른다 — 앞 번호(01~04)가 세부 그룹(SSO/WA/PASS/OS 로그온)을 정한다
-const ISIGN_CATEGORIES = ["01. SSO/EAM, 통합인증", "02. PKI, 구간암호화/공인인증", "03-1. 인증 - OTP", "03-2. 인증 - 생체인증", "03-3. 인증 - PIN", "03-4. 인증 - 모바일간편인증", "03-5. 인증 - 민간인증서중계", "04. Windows OS 로그온 보안"];
+// iSIGN 세부분류는 아래 8개 중에서만 고른다 — 이름이 세부 그룹을 정한다
+// (SSO → SSO, PKI → WA, OTP·생체인증·PIN·간편인증·인증서중계 → PASS, OS 로그온 → OS 로그온)
+const ISIGN_CATEGORIES = ["SSO", "PKI", "OTP", "생체인증", "PIN", "간편인증", "인증서중계", "OS 로그온"];
 function IsignCategorySelect({
   value,
   onChange,
