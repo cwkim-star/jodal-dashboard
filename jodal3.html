@@ -3365,20 +3365,13 @@ function prepareItemRecords(items, deliveryRows) {
   const mfrMap = manufacturerById(items);
   const rank = new Map(aggregateByCompany(deliveryRows, mfrMap).map((c, i) => [c.name, i]));
   const deliveryName = new Map();
-  const firstDelivery = new Map();
   for (const r of deliveryRows) {
     const id = (r["물품식별번호"] || "").trim();
     const name = (r["물품식별명"] || "").trim();
     if (id && name && !deliveryName.has(id)) deliveryName.set(id, name);
-    const ymd = String(r["납품요구일자"] ?? "").trim();
-    if (id && /^\d{8}$/.test(ymd) && (!firstDelivery.has(id) || ymd < firstDelivery.get(id))) firstDelivery.set(id, ymd);
   }
-  // 시트에 등록일자가 없는 품목은 실제 등록일을 알 수 없으므로 최초 납품요구일자로 대체하고 표기로 구분한다
-  const fillDate = (r, id) => {
-    if ((r["등록일자"] || "").trim()) return r["등록일자"];
-    const ymd = firstDelivery.get(id);
-    return ymd ? `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)} (최초 납품요구일)` : "-";
-  };
+  // 등록일자가 없는 품목(레퍼런스에서 옮겨 온 32건 등)은 다른 날짜로 대신하지 않고 비워 둔다 ("-")
+  const fillDate = r => (r["등록일자"] || "").trim() ? r["등록일자"] : "-";
   const isOurs = r => (r["제조사명"] || "").includes(OUR_COMPANY_MARK);
   const rankOf = r => rank.get((r["제조사명"] || "").trim()) ?? Infinity;
   return items.map(r => {
@@ -3387,7 +3380,7 @@ function prepareItemRecords(items, deliveryRows) {
     return {
       ...r,
       품목: name && name !== "-" ? r["품목"] : deliveryName.get(id) || "-",
-      등록일자: fillDate(r, id)
+      등록일자: fillDate(r)
     };
   }).sort((a, b) => isOurs(b) - isOurs(a) || rankOf(a) - rankOf(b) || (a["제조사명"] || "").localeCompare(b["제조사명"] || "", "ko") || (a["물품식별번호"] || "").localeCompare(b["물품식별번호"] || ""));
 }
@@ -4536,7 +4529,7 @@ function ProductCell({
   }, product || "-");
 }
 
-// 등록일자 최신순 정렬 — "2025-01-14 (최초 납품요구일)"처럼 꼬리표가 붙은 값도 앞 10자리 날짜로 비교, 일자 없는 품목은 맨 뒤
+// 등록일자 최신순 정렬 — 앞 10자리 날짜로 비교, 일자 없는 품목은 맨 뒤
 function sortByDateDesc(rows) {
   const dateOf = r => {
     const d = String(r["등록일자"] || "").slice(0, 10);
