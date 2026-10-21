@@ -4350,7 +4350,7 @@ const ITEM_FILTER_COLUMNS = [{
 // 일일 신규 품목 표 — 제품명 칸에 제품 선택 상자가 들어가므로 넓히고, 비어 있기 쉬운 세부분류는 줄인다
 const PENDING_COL_WIDTH = {
   "제품명": 150,
-  "세부분류": 110,
+  "세부분류": 190,
   "제조사명": 140,
   "물품식별번호": 120,
   "등록일자": 120
@@ -4632,6 +4632,48 @@ function TrashPanel({
     }, "\uB418\uC0B4\uB9AC\uAE30")));
   })))));
 }
+
+// 일일 신규 품목의 세부분류 칸 — 바로 입력해서 저장 (Enter 또는 칸을 벗어나면 저장, Esc는 취소).
+// 같은 제품에서 이미 쓰는 세부분류를 목록으로 보여줘 표기가 흩어지지 않게 한다.
+function DetailCell({
+  value,
+  product,
+  onSave
+}) {
+  const [v, setV] = React.useState(value || "");
+  React.useEffect(() => {
+    setV(value || "");
+  }, [value]);
+  const listId = `detail-options-${PRODUCT_TABS.includes(product) ? product.replace(/\W/g, "") : "all"}`;
+  const commit = () => {
+    if (v.trim() !== (value || "").trim()) onSave(v.trim());
+  };
+  return /*#__PURE__*/React.createElement("input", {
+    value: v,
+    list: listId,
+    placeholder: "\uC138\uBD80\uBD84\uB958 \uC785\uB825",
+    onChange: e => setV(e.target.value),
+    onBlur: commit,
+    onKeyDown: e => {
+      if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur();
+      if (e.key === "Escape") {
+        setV(value || "");
+        setTimeout(() => e.target.blur(), 0);
+      }
+    },
+    title: "\uC138\uBD80\uBD84\uB958 \u2014 \uC785\uB825 \uD6C4 Enter",
+    style: {
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "4px 8px",
+      borderRadius: 6,
+      font: "500 13px var(--font-body)",
+      border: `1px solid ${v ? "var(--border-button)" : "var(--border-subtle)"}`,
+      background: "var(--surface-card)",
+      color: "var(--text-primary)"
+    }
+  });
+}
 function ItemManager({
   items: rawRows,
   pending: rawPending,
@@ -4664,6 +4706,18 @@ function ItemManager({
   });
   const [pick, setPick] = React.useState({}); // 기타 품목별로 고른 제품 { key: "WAPPLES" }
   const [showTrash, setShowTrash] = React.useState(false);
+  const detailOptions = React.useMemo(() => {
+    const by = {
+      all: new Set()
+    };
+    for (const r of items) {
+      const d = String(r["세부분류"] || "").trim();
+      if (!d) continue;
+      by.all.add(d);
+      (by[r["제품명"]] = by[r["제품명"]] || new Set()).add(d);
+    }
+    return by;
+  }, [items]);
 
   // ── 일일 신규 품목(검토 대기) ──
   const pendingKeys = pending.map(itemKey);
@@ -4942,7 +4996,7 @@ function ItemManager({
       color: "var(--text-tertiary)",
       marginTop: 6
     }
-  }, latestCollect ? `${ymdToDot(latestCollect)} 수집분 · ` : "", "\uB370\uC774\uD130\uC5D0 \uB123\uC744 \uD488\uBAA9\uC740 \uCD94\uAC00, \uBE84 \uD488\uBAA9\uC740 \uC0AD\uC81C\uD558\uC138\uC694 \xB7 \uC790\uB3D9 \uBD84\uB958\uB41C \uC81C\uD488\uC740 \uC81C\uD488\uBA85 \uCE78\uC5D0\uC11C \uBC14\uAFC0 \uC218 \uC788\uACE0, \uBD84\uB958\uB418\uC9C0 \uC54A\uC740 \uD488\uBAA9\uC740 \uC81C\uD488\uC744 \uACE0\uB978 \uB4A4 \uCD94\uAC00")), /*#__PURE__*/React.createElement("div", {
+  }, latestCollect ? `${ymdToDot(latestCollect)} 수집분 · ` : "", "\uB370\uC774\uD130\uC5D0 \uB123\uC744 \uD488\uBAA9\uC740 \uCD94\uAC00, \uBE84 \uD488\uBAA9\uC740 \uC0AD\uC81C\uD558\uC138\uC694 \xB7 \uC81C\uD488\uBA85\uACFC \uC138\uBD80\uBD84\uB958\uB294 \uD45C\uC5D0\uC11C \uBC14\uB85C \uACE0\uCE60 \uC218 \uC788\uACE0, \uBD84\uB958\uB418\uC9C0 \uC54A\uC740 \uD488\uBAA9\uC740 \uC81C\uD488\uC744 \uACE0\uB978 \uB4A4 \uCD94\uAC00")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8
@@ -4973,7 +5027,13 @@ function ItemManager({
       maxHeight: 360,
       overflow: "auto"
     }
-  }, /*#__PURE__*/React.createElement("table", {
+  }, ["all", ...PRODUCT_TABS].map(t => /*#__PURE__*/React.createElement("datalist", {
+    key: t,
+    id: `detail-options-${t === "all" ? "all" : t.replace(/\W/g, "")}`
+  }, Array.from(detailOptions[t] || []).sort((a, b) => a.localeCompare(b, "ko")).map(d => /*#__PURE__*/React.createElement("option", {
+    key: d,
+    value: d
+  })))), /*#__PURE__*/React.createElement("table", {
     style: {
       borderCollapse: "collapse",
       width: "max-content",
@@ -5101,8 +5161,18 @@ function ItemManager({
       key: t,
       value: t
     }, t))))), /*#__PURE__*/React.createElement("td", {
-      style: ITEM_TD
-    }, r["세부분류"] || "-"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...ITEM_TD,
+        padding: "6px 8px",
+        overflow: "visible"
+      }
+    }, /*#__PURE__*/React.createElement(DetailCell, {
+      value: r["세부분류"],
+      product: r["제품명"] !== "기타" ? r["제품명"] : pick[k],
+      onSave: val => onEdit([k], {
+        세부분류: val
+      })
+    })), /*#__PURE__*/React.createElement("td", {
       style: {
         ...ITEM_TD,
         ...mfrStyle(r)
