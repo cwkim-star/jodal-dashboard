@@ -578,6 +578,7 @@ function bidToRecord(b) {
     "공고번호": `${b.bid_no}-${b.bid_ord}`,
     "관련 제품": (b.products || []).join(", "),
     "공고명": b.title,
+    "키워드": (b.keywords || []).join(", "),
     "업무구분": b.business_type || "",
     "공고기관": b.order_org || "",
     "수요기관": b.demand_org || "",
@@ -5624,13 +5625,246 @@ const BID_TONE = {
     color: "var(--text-tertiary)"
   }
 };
+// ── 입찰공고 분류 키워드 (DB bid_keywords) — 회사 계정이면 누구나 보고 추가·삭제, 다음 수집부터 반영 ──
+const KEYWORD_GROUPS = [{
+  key: "WAPPLES",
+  label: "WAPPLES"
+}, {
+  key: "D.AMO",
+  label: "D.AMO"
+}, {
+  key: "iSIGN",
+  label: "iSIGN"
+}, {
+  key: "제외",
+  label: "제외 단어",
+  note: "이 단어가 들어간 공고는 버려요"
+}];
+function KeywordPanel({
+  lastChecked
+}) {
+  const [rows, setRows] = React.useState(null);
+  const [draft, setDraft] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const load = React.useCallback(() => {
+    sb.from("bid_keywords").select("*").order("id").then(({
+      data,
+      error
+    }) => {
+      if (error) window.alert(`키워드를 불러오지 못했습니다.\n${error.message}`);else setRows(data);
+    });
+  }, []);
+  React.useEffect(() => {
+    load();
+    const ch = sb.channel("bid-keywords").on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "bid_keywords"
+    }, load).subscribe();
+    return () => {
+      sb.removeChannel(ch);
+    };
+  }, [load]);
+  const add = async group => {
+    const k = String(draft[group] || "").trim().replace(/\s+/g, " ");
+    if (!k) return;
+    setBusy(true);
+    const {
+      error
+    } = await sb.from("bid_keywords").insert({
+      product: group,
+      keyword: k
+    });
+    setBusy(false);
+    if (error) {
+      window.alert(error.code === "23505" ? `"${k}"는 이미 있는 키워드예요.` : `추가하지 못했습니다.\n${error.message}`);
+      return;
+    }
+    setDraft(d => ({
+      ...d,
+      [group]: ""
+    }));
+    load();
+  };
+  const remove = async r => {
+    if (!window.confirm(`"${r.keyword}" 키워드를 뺄까요?\n다음 수집부터 이 키워드로는 공고를 모으지 않아요.`)) return;
+    const {
+      error
+    } = await sb.from("bid_keywords").delete().eq("id", r.id);
+    if (error) {
+      window.alert(`삭제하지 못했습니다.\n${error.message}`);
+      return;
+    }
+    load();
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "var(--surface-card)",
+      border: "1px solid var(--border-default)",
+      borderRadius: "var(--radius-xl)",
+      padding: "18px 20px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "baseline",
+      justifyContent: "space-between",
+      gap: 12,
+      flexWrap: "wrap",
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "700 17px var(--font-display)",
+      color: "var(--text-primary)"
+    }
+  }, "\uBD84\uB958 \uD0A4\uC6CC\uB4DC"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "500 13px var(--font-body)",
+      color: "var(--text-tertiary)"
+    }
+  }, lastChecked ? `마지막 확인 ${kstText(lastChecked).replace(/-/g, ".")} · ` : "", "\uD3C9\uC77C 08:30~18:30 \uB9E4\uC2DC\uAC04 \uD655\uC778")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      font: "500 13px var(--font-body)",
+      color: "var(--text-tertiary)",
+      lineHeight: 1.7,
+      marginBottom: 14
+    }
+  }, "\uACF5\uACE0\uBA85\uC5D0 \uC774 \uB2E8\uC5B4\uAC00 \uB4E4\uC5B4\uAC00\uBA74 \uADF8 \uC81C\uD488 \uACF5\uACE0\uB85C \uBAA8\uC544\uC694. \uB744\uC5B4 \uC4F4 \uC790\uB9AC\uB294 \uBD99\uC5EC \uC368\uB3C4 \uCC3E\uC544\uC694(\uC608: \"\uC6F9 \uBC29\uD654\uBCBD\"\uC774\uBA74 \"\uC6F9\uBC29\uD654\uBCBD\"\uB3C4). \uC601\uBB38 \uC57D\uC5B4\uB294 \uB2E4\uB978 \uC601\uB2E8\uC5B4 \uC18D\uC5D0 \uB4E4\uC5B4\uAC04 \uACBD\uC6B0\uB294 \uBB34\uC2DC\uD574\uC694(\uC608: SSO\uB294 COMPRESSOR\uC5D0\uC11C \uC548 \uAC78\uB9BC). \uC0C8\uB85C \uB123\uC740 \uD0A4\uC6CC\uB4DC\uB294 \uB2E4\uC74C \uD655\uC778 \uB54C \uC62C\uD574 1\uC6D4 \uACF5\uACE0\uAE4C\uC9C0 \uAC70\uC2AC\uB7EC \uCC3E\uC544\uC694."), rows === null ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      font: "var(--text-body-sm)",
+      color: "var(--text-tertiary)"
+    }
+  }, "\uBD88\uB7EC\uC624\uB294 \uC911\u2026") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  }, KEYWORD_GROUPS.map(g => {
+    const list = rows.filter(r => r.product === g.key);
+    return /*#__PURE__*/React.createElement("div", {
+      key: g.key,
+      style: {
+        display: "flex",
+        gap: 12,
+        alignItems: "flex-start",
+        borderTop: "1px solid var(--border-subtle)",
+        paddingTop: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: "0 0 96px",
+        paddingTop: 5
+      }
+    }, g.key === "제외" ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        font: "700 13px var(--font-body)",
+        color: "var(--text-secondary)"
+      }
+    }, g.label) : /*#__PURE__*/React.createElement(ProductCell, {
+      product: g.key
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        font: "500 12px var(--font-body)",
+        color: "var(--text-tertiary)",
+        marginTop: 2
+      }
+    }, list.length, "\uAC1C")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 6,
+        alignItems: "center"
+      }
+    }, list.map(r => /*#__PURE__*/React.createElement("span", {
+      key: r.id,
+      title: r.created_by && r.created_by !== "기본" ? `추가: ${String(r.created_by).replace(STAFF_DOMAIN, "")}` : "기본 키워드",
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "4px 6px 4px 10px",
+        borderRadius: 999,
+        font: "600 13px var(--font-body)",
+        whiteSpace: "nowrap",
+        background: g.key === "제외" ? "var(--surface-muted)" : "rgba(30,58,138,0.07)",
+        color: g.key === "제외" ? "var(--text-secondary)" : OUR_COLOR,
+        border: r.created_by && r.created_by !== "기본" ? `1px solid ${OUR_COLOR}` : "1px solid transparent"
+      }
+    }, r.keyword, /*#__PURE__*/React.createElement("button", {
+      onClick: () => remove(r),
+      "aria-label": `${r.keyword} 빼기`,
+      title: "\uBE7C\uAE30",
+      style: {
+        all: "unset",
+        cursor: "pointer",
+        width: 18,
+        height: 18,
+        borderRadius: 999,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        font: "700 13px var(--font-body)",
+        color: "var(--text-tertiary)"
+      }
+    }, "\xD7"))), /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "inline-flex",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      value: draft[g.key] || "",
+      placeholder: g.key === "제외" ? "제외할 단어" : "키워드 추가",
+      onChange: e => setDraft(d => ({
+        ...d,
+        [g.key]: e.target.value
+      })),
+      onKeyDown: e => {
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) add(g.key);
+      },
+      style: {
+        width: 140,
+        padding: "5px 10px",
+        borderRadius: 999,
+        border: "1px solid var(--border-button)",
+        font: "500 13px var(--font-body)",
+        background: "var(--surface-card)",
+        color: "var(--text-primary)"
+      }
+    }), /*#__PURE__*/React.createElement("button", {
+      disabled: busy || !String(draft[g.key] || "").trim(),
+      onClick: () => add(g.key),
+      style: {
+        ...actionButton("primary", busy || !String(draft[g.key] || "").trim()),
+        padding: "5px 12px",
+        font: "600 13px var(--font-body)"
+      }
+    }, "\uCD94\uAC00"))));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      font: "500 12px var(--font-body)",
+      color: "var(--text-tertiary)",
+      marginTop: 12
+    }
+  }, "\uD14C\uB450\uB9AC\uAC00 \uC788\uB294 \uD0A4\uC6CC\uB4DC\uB294 \uC9C1\uC811 \uCD94\uAC00\uD55C \uAC83\uC774\uC5D0\uC694. \uD0A4\uC6CC\uB4DC\uC5D0 \uB9C8\uC6B0\uC2A4\uB97C \uC62C\uB9AC\uBA74 \uB204\uAC00 \uB123\uC5C8\uB294\uC9C0 \uBCF4\uC5EC\uC694."));
+}
 function BidNoticePage({
   bids
 }) {
   const [tab, setTab] = React.useState("ALL");
   const [onlyOpen, setOnlyOpen] = React.useState(true);
+  const [showKeywords, setShowKeywords] = React.useState(false);
+  const [lastChecked, setLastChecked] = React.useState(null);
+  React.useEffect(() => {
+    sb.from("app_state").select("value").eq("key", "bids").maybeSingle().then(({
+      data
+    }) => setLastChecked(data?.value?.last_checked || null));
+  }, [bids]);
   const now = new Date();
-  const rows = React.useMemo(() => bids.map(r => ({
+  const rows = React.useMemo(() => bids.filter(r => String(r["관련 제품"] || "").trim()) // 키워드가 빠져 더는 안 걸리는 공고는 숨김
+  .map(r => ({
     ...r,
     __products: String(r["관련 제품"] || "").split(",").map(x => x.trim()).filter(Boolean),
     __status: bidStatus(r, now)
@@ -5690,7 +5924,13 @@ function BidNoticePage({
       font: "500 13px var(--font-body)",
       color: "var(--text-tertiary)"
     }
-  }, "\uCD9C\uCC98: \uB098\uB77C\uC7A5\uD130 \uC785\uCC30\uACF5\uACE0 \xB7 \uC81C\uD488 \uD0A4\uC6CC\uB4DC \uC790\uB3D9 \uBD84\uB958", lastCollected ? ` · ${lastCollected.replace(/-/g, ".")} 업데이트` : "")), /*#__PURE__*/React.createElement("div", {
+  }, "\uCD9C\uCC98: \uB098\uB77C\uC7A5\uD130 \uC785\uCC30\uACF5\uACE0", lastChecked ? ` · 마지막 확인 ${kstText(lastChecked).slice(5).replace("-", ".")}` : lastCollected ? ` · ${lastCollected.replace(/-/g, ".")} 업데이트` : ""), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowKeywords(v => !v),
+    style: chip(showKeywords),
+    title: "\uC5B4\uB5A4 \uB2E8\uC5B4\uB85C \uACF5\uACE0\uB97C \uBAA8\uC73C\uB294\uC9C0 \uBCF4\uACE0, \uC9C1\uC811 \uCD94\uAC00\xB7\uC0AD\uC81C"
+  }, "\uD0A4\uC6CC\uB4DC \uC124\uC815")), showKeywords && /*#__PURE__*/React.createElement(KeywordPanel, {
+    lastChecked: lastChecked
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       background: "var(--surface-card)",
       border: "1px solid var(--border-default)",
@@ -5758,7 +5998,11 @@ function BidNoticePage({
         color: "var(--text-tertiary)",
         marginTop: 3
       }
-    }, r["업무구분"], r["공고상태"] && r["공고상태"] !== "등록공고" ? ` · ${r["공고상태"]}` : "", " \xB7 ", r["공고번호"])), /*#__PURE__*/React.createElement("td", {
+    }, r["업무구분"], r["공고상태"] && r["공고상태"] !== "등록공고" ? ` · ${r["공고상태"]}` : "", " \xB7 ", r["공고번호"], r["키워드"] && /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: OUR_COLOR
+      }
+    }, " \xB7 \uD0A4\uC6CC\uB4DC: ", r["키워드"]))), /*#__PURE__*/React.createElement("td", {
       style: {
         ...ITEM_TD,
         whiteSpace: "normal"
