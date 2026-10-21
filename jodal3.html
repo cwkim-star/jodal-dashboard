@@ -377,6 +377,7 @@ function MenuIcon({
     "item-id-by-vendor": "M3 21h18M5 21V7l7-4 7 4v14M9 10h1M14 10h1M9 14h1M14 14h1",
     "bid-notices": "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6",
     "bid-keywords": "M3 12V4h8l10 10-8 8zM7.5 7.5h.01",
+    "item-list": "M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM20 20l-4.8-4.8",
     "user-roles": "M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6M22 19v-1a4 4 0 0 0-3-3.87M16 4.13a3 3 0 0 1 0 5.74"
   }[id];
   if (!d) return /*#__PURE__*/React.createElement(FolderIcon, null);
@@ -431,6 +432,10 @@ const NAV_COLLAPSED_KEY = "jodal3_nav_collapsed";
 const MENU = [{
   id: "jodal-stats",
   label: "조달통계",
+  depth: 1
+}, {
+  id: "item-list",
+  label: "등록 품목",
   depth: 1
 }, {
   id: "bid-notices",
@@ -4692,6 +4697,8 @@ function DetailCell({
     }
   });
 }
+
+// readOnly: 이용자용 "등록 품목" — 등록이 끝난 물품만, 필터·엑셀 다운로드만 (추가·수정·삭제·검토 대기 없음)
 function ItemManager({
   items: rawRows,
   pending: rawPending,
@@ -4701,7 +4708,8 @@ function ItemManager({
   onAdd,
   onEdit,
   trash = [],
-  onRestore
+  onRestore,
+  readOnly = false
 }) {
   const items = React.useMemo(() => sortByDateDesc(rawRows), [rawRows]);
   const pending = React.useMemo(() => sortByDateDesc(rawPending), [rawPending]);
@@ -4978,7 +4986,7 @@ function ItemManager({
       font: "var(--text-body-sm)",
       color: "var(--text-tertiary)"
     }
-  }, "\uB4F1\uB85D \uBB3C\uD488\uC2DD\uBCC4\uBC88\uD638 ", items.length, "\uAC74 \xB7 \uAC80\uD1A0 \uB300\uAE30 ", pending.length, "\uAC74")), /*#__PURE__*/React.createElement("div", {
+  }, "\uB4F1\uB85D \uBB3C\uD488\uC2DD\uBCC4\uBC88\uD638 ", items.length, "\uAC74", readOnly ? "" : ` · 검토 대기 ${pending.length}건`)), !readOnly && /*#__PURE__*/React.createElement("div", {
     style: {
       ...cardStyle,
       border: pending.length ? "1.5px solid var(--accent-primary-strong)" : cardStyle.border
@@ -5265,7 +5273,7 @@ function ItemManager({
     disabled: !filtered.length,
     onClick: () => downloadItemsCsv(filtered),
     title: "\uC9C0\uAE08 \uD45C\uC5D0 \uBCF4\uC774\uB294 \uD488\uBAA9(\uD544\uD130 \uC801\uC6A9)\uC744 \uC5D1\uC140 \uD30C\uC77C\uB85C \uC800\uC7A5"
-  }, "\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC"), /*#__PURE__*/React.createElement("button", {
+  }, "\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC"), !readOnly && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
     style: actionButton(showTrash ? "primary" : "default"),
     onClick: () => setShowTrash(v => !v),
     title: "\uC0AD\uC81C\uD55C \uBB3C\uD488\uC744 \uBCF4\uACE0 \uB418\uC0B4\uB9AC\uAE30"
@@ -5275,7 +5283,7 @@ function ItemManager({
       setShowAdd(v => !v);
       setError("");
     }
-  }, showAdd ? "닫기" : "+ 직접 추가"))), showTrash && /*#__PURE__*/React.createElement(TrashPanel, {
+  }, showAdd ? "닫기" : "+ 직접 추가")))), showTrash && /*#__PURE__*/React.createElement(TrashPanel, {
     items: trash,
     onRestore: onRestore
   }), showAdd && /*#__PURE__*/React.createElement("div", {
@@ -5424,7 +5432,7 @@ function ItemManager({
       width: "max-content",
       minWidth: "100%"
     }
-  }, /*#__PURE__*/React.createElement("colgroup", null, /*#__PURE__*/React.createElement("col", {
+  }, /*#__PURE__*/React.createElement("colgroup", null, !readOnly && /*#__PURE__*/React.createElement("col", {
     style: {
       width: 44
     }
@@ -5433,7 +5441,7 @@ function ItemManager({
     style: c.width ? {
       width: c.width
     } : undefined
-  })), /*#__PURE__*/React.createElement("col", {
+  })), !readOnly && /*#__PURE__*/React.createElement("col", {
     style: {
       width: 124
     }
@@ -5443,7 +5451,7 @@ function ItemManager({
       top: 0,
       zIndex: 1
     }
-  }, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+  }, /*#__PURE__*/React.createElement("tr", null, !readOnly && /*#__PURE__*/React.createElement("th", {
     style: ITEM_TH
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
@@ -5458,14 +5466,14 @@ function ItemManager({
   })), ITEM_FILTER_COLUMNS.map(c => /*#__PURE__*/React.createElement("th", {
     key: c.key,
     style: ITEM_TH
-  }, c.key)), /*#__PURE__*/React.createElement("th", {
+  }, c.key)), !readOnly && /*#__PURE__*/React.createElement("th", {
     style: {
       ...ITEM_TH,
       ...STICKY_RIGHT,
       background: ITEM_TH.background,
       zIndex: 2
     }
-  }, "\uAD00\uB9AC")), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+  }, "\uAD00\uB9AC")), /*#__PURE__*/React.createElement("tr", null, !readOnly && /*#__PURE__*/React.createElement("td", {
     style: FILTER_TD
   }), ITEM_FILTER_COLUMNS.map(c => /*#__PURE__*/React.createElement("td", {
     key: c.key,
@@ -5478,14 +5486,14 @@ function ItemManager({
       ...prev,
       [c.key]: v
     }))
-  }))), /*#__PURE__*/React.createElement("td", {
+  }))), !readOnly && /*#__PURE__*/React.createElement("td", {
     style: {
       ...FILTER_TD,
       ...STICKY_RIGHT,
       zIndex: 2
     }
   }))), /*#__PURE__*/React.createElement("tbody", null, filtered.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: ITEM_FILTER_COLUMNS.length + 2,
+    colSpan: ITEM_FILTER_COLUMNS.length + (readOnly ? 0 : 2),
     style: {
       padding: "28px 12px",
       font: "var(--text-body-sm)",
@@ -5508,7 +5516,7 @@ function ItemManager({
       style: {
         background: isEditing ? "rgba(30,58,138,0.06)" : selected.has(k) ? "rgba(30,58,138,0.04)" : "transparent"
       }
-    }, /*#__PURE__*/React.createElement("td", {
+    }, !readOnly && /*#__PURE__*/React.createElement("td", {
       style: {
         ...ITEM_TD,
         textAlign: "center",
@@ -5576,7 +5584,7 @@ function ItemManager({
       }
     }, r["물품식별번호"]), /*#__PURE__*/React.createElement("td", {
       style: ITEM_TD_FULL
-    }, r["품목"] || "-")), /*#__PURE__*/React.createElement("td", {
+    }, r["품목"] || "-")), !readOnly && /*#__PURE__*/React.createElement("td", {
       style: {
         ...ITEM_TD,
         ...STICKY_RIGHT,
@@ -7011,6 +7019,10 @@ function App() {
     onEdit: editItems,
     trash: trashItems,
     onRestore: restoreItems
+  }) : active === "item-list" ? /*#__PURE__*/React.createElement(ItemManager, {
+    readOnly: true,
+    items: PRODUCT_TABS.flatMap(t => sortedItemsByProduct[t]),
+    pending: []
   }) : active === "bid-notices" ? /*#__PURE__*/React.createElement(BidNoticePage, {
     bids: rawBids
   }) : active === "bid-keywords" && isAdmin ? /*#__PURE__*/React.createElement(BidKeywordPage, null) : active === "user-roles" && isAdmin ? /*#__PURE__*/React.createElement(UserRolesPage, {
