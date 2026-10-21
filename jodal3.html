@@ -625,7 +625,7 @@ function deliveryToRecord(d) {
   return rec;
 }
 async function loadItemRecords() {
-  const rows = await fetchAll(() => sb.from("items").select("*").in("status", ["active", "pending"]).order("id"));
+  const rows = await fetchAll(() => sb.from("items").select("*").order("id"));
   return rows.map(itemToRecord);
 }
 async function fetchSheetCSV(gid) {
@@ -4375,6 +4375,20 @@ const ITEM_TD = {
   textOverflow: "ellipsis",
   maxWidth: 520
 };
+// 품목명은 자르지 않고 다 보여준다 (표가 넓어지면 가로 스크롤)
+const ITEM_TD_FULL = {
+  ...ITEM_TD,
+  maxWidth: "none",
+  overflow: "visible",
+  textOverflow: "clip"
+};
+// 가로로 스크롤해도 관리/처리 버튼은 오른쪽에 붙어 있게
+const STICKY_RIGHT = {
+  position: "sticky",
+  right: 0,
+  background: "var(--surface-card)",
+  boxShadow: "inset 1px 0 0 var(--border-default)"
+};
 const FILTER_TD = {
   borderBottom: "1px solid var(--border-default)",
   borderRight: "1px solid var(--border-subtle)",
@@ -4494,6 +4508,129 @@ function sortByDateDesc(rows) {
   };
   return [...rows].sort((a, b) => dateOf(b).localeCompare(dateOf(a)) || String(a["물품식별번호"] || "").localeCompare(String(b["물품식별번호"] || "")));
 }
+
+// ── 휴지통: 삭제한 물품 (DB에서 지우지 않고 "제외" 상태로 남겨 두므로 되살릴 수 있다) ──
+function TrashPanel({
+  items,
+  onRestore
+}) {
+  const [who, setWho] = React.useState({}); // item id → 마지막 삭제 기록 { changed_by, changed_at }
+  const idList = items.map(r => r.__id).join(",");
+  React.useEffect(() => {
+    if (!items.length) {
+      setWho({});
+      return;
+    }
+    sb.from("item_changes").select("item_pk, changed_by, changed_at").eq("action", "exclude").in("item_pk", items.map(r => r.__id)).order("changed_at", {
+      ascending: false
+    }).then(({
+      data
+    }) => {
+      const m = {};
+      for (const c of data || []) if (!m[c.item_pk]) m[c.item_pk] = c;
+      setWho(m);
+    });
+  }, [idList]);
+  const rows = [...items].sort((a, b) => String(who[b.__id]?.changed_at || "").localeCompare(String(who[a.__id]?.changed_at || "")));
+  if (!rows.length) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        borderTop: "1px solid var(--border-subtle)",
+        padding: "24px 20px",
+        textAlign: "center",
+        font: "var(--text-body-sm)",
+        color: "var(--text-tertiary)",
+        background: "var(--surface-muted)"
+      }
+    }, "\uD734\uC9C0\uD1B5\uC774 \uBE44\uC5B4 \uC788\uC5B4\uC694. \uC0AD\uC81C\uD55C \uBB3C\uD488\uC740 \uC5EC\uAE30\uB85C \uC62E\uACA8\uC9C0\uACE0, \uC5B8\uC81C\uB4E0 \uB418\uC0B4\uB9B4 \uC218 \uC788\uC5B4\uC694.");
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: "1px solid var(--border-subtle)",
+      background: "var(--surface-muted)",
+      padding: "12px 20px 16px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      font: "500 13px var(--font-body)",
+      color: "var(--text-tertiary)",
+      marginBottom: 10
+    }
+  }, "\uC0AD\uC81C\uD55C \uBB3C\uD488 ", rows.length, "\uAC74 \xB7 \uB418\uC0B4\uB9AC\uBA74 \uC6D0\uB798 \uC790\uB9AC(\uB4F1\uB85D \uD488\uBAA9, \uC81C\uD488 \uBBF8\uC815\uC774\uBA74 \uC77C\uC77C \uC2E0\uADDC \uD488\uBAA9)\uB85C \uB3CC\uC544\uAC00\uC694."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxHeight: 320,
+      overflow: "auto",
+      background: "var(--surface-card)",
+      border: "1px solid var(--border-default)",
+      borderRadius: 8
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      borderCollapse: "collapse",
+      width: "max-content",
+      minWidth: "100%"
+    }
+  }, /*#__PURE__*/React.createElement("thead", {
+    style: {
+      position: "sticky",
+      top: 0,
+      zIndex: 1
+    }
+  }, /*#__PURE__*/React.createElement("tr", null, ["삭제 시각", "삭제한 사람", "제품명", "제조사명", "물품식별번호", "품목"].map(c => /*#__PURE__*/React.createElement("th", {
+    key: c,
+    style: ITEM_TH
+  }, c)), /*#__PURE__*/React.createElement("th", {
+    style: {
+      ...ITEM_TH,
+      ...STICKY_RIGHT,
+      background: ITEM_TH.background,
+      zIndex: 2
+    }
+  }, "\uBCF5\uC6D0"))), /*#__PURE__*/React.createElement("tbody", null, rows.map(r => {
+    const w = who[r.__id];
+    return /*#__PURE__*/React.createElement("tr", {
+      key: r.__key
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...ITEM_TD,
+        color: "var(--text-secondary)",
+        fontVariantNumeric: "tabular-nums"
+      }
+    }, w ? kstText(w.changed_at) : "-"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...ITEM_TD,
+        color: "var(--text-secondary)"
+      }
+    }, w ? String(w.changed_by).replace(STAFF_DOMAIN, "") : "-"), /*#__PURE__*/React.createElement("td", {
+      style: ITEM_TD
+    }, /*#__PURE__*/React.createElement(ProductCell, {
+      product: r["제품명"]
+    })), /*#__PURE__*/React.createElement("td", {
+      style: ITEM_TD
+    }, shortName(r["제조사명"]) || "-"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...ITEM_TD,
+        fontVariantNumeric: "tabular-nums"
+      }
+    }, r["물품식별번호"]), /*#__PURE__*/React.createElement("td", {
+      style: ITEM_TD_FULL
+    }, r["품목"] || "-"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...ITEM_TD,
+        ...STICKY_RIGHT,
+        textAlign: "center",
+        padding: "6px 10px"
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...actionButton("primary"),
+        padding: "5px 12px",
+        font: "600 13px var(--font-body)"
+      },
+      onClick: () => onRestore([r.__key])
+    }, "\uB418\uC0B4\uB9AC\uAE30")));
+  })))));
+}
 function ItemManager({
   items: rawRows,
   pending: rawPending,
@@ -4501,7 +4638,9 @@ function ItemManager({
   onInclude,
   onExclude,
   onAdd,
-  onEdit
+  onEdit,
+  trash = [],
+  onRestore
 }) {
   const items = React.useMemo(() => sortByDateDesc(rawRows), [rawRows]);
   const pending = React.useMemo(() => sortByDateDesc(rawPending), [rawPending]);
@@ -4523,6 +4662,7 @@ function ItemManager({
     category: ""
   });
   const [pick, setPick] = React.useState({}); // 기타 품목별로 고른 제품 { key: "WAPPLES" }
+  const [showTrash, setShowTrash] = React.useState(false);
 
   // ── 일일 신규 품목(검토 대기) ──
   const pendingKeys = pending.map(itemKey);
@@ -4568,7 +4708,7 @@ function ItemManager({
   };
   const exclude = keys => {
     if (!keys.length) return;
-    if (!window.confirm(`${keys.length}건을 데이터에서 제외할까요?`)) return;
+    if (!window.confirm(`${keys.length}건을 휴지통으로 옮길까요?\n휴지통에서 언제든 되살릴 수 있어요.`)) return;
     onExclude(keys);
     clearChecked(keys);
   };
@@ -4616,7 +4756,7 @@ function ItemManager({
     setError("");
   };
   const removeOne = r => {
-    if (!window.confirm(`${r["물품식별번호"]} (${r["제품명"]})을 데이터에서 삭제할까요?`)) return;
+    if (!window.confirm(`${r["물품식별번호"]} (${r["제품명"]})을 휴지통으로 옮길까요?\n휴지통에서 언제든 되살릴 수 있어요.`)) return;
     onExclude([itemKey(r)]);
   };
 
@@ -4707,7 +4847,7 @@ function ItemManager({
   };
   const bulkDelete = () => {
     if (!selectedKeys.length) return;
-    if (!window.confirm(`선택한 ${selectedKeys.length}건을 데이터에서 삭제할까요?`)) return;
+    if (!window.confirm(`선택한 ${selectedKeys.length}건을 휴지통으로 옮길까요?\n휴지통에서 언제든 되살릴 수 있어요.`)) return;
     onExclude(selectedKeys);
     setSelected(new Set());
   };
@@ -4835,8 +4975,8 @@ function ItemManager({
   }, /*#__PURE__*/React.createElement("table", {
     style: {
       borderCollapse: "collapse",
-      width: "100%",
-      tableLayout: "fixed"
+      width: "max-content",
+      minWidth: "100%"
     }
   }, /*#__PURE__*/React.createElement("colgroup", null, /*#__PURE__*/React.createElement("col", {
     style: {
@@ -4873,10 +5013,17 @@ function ItemManager({
       height: 16,
       cursor: "pointer"
     }
-  })), [...ITEM_FILTER_COLUMNS.map(c => c.key), "처리"].map(col => /*#__PURE__*/React.createElement("th", {
-    key: col,
+  })), ITEM_FILTER_COLUMNS.map(c => /*#__PURE__*/React.createElement("th", {
+    key: c.key,
     style: ITEM_TH
-  }, col)))), /*#__PURE__*/React.createElement("tbody", null, pending.map(r => {
+  }, c.key)), /*#__PURE__*/React.createElement("th", {
+    style: {
+      ...ITEM_TH,
+      ...STICKY_RIGHT,
+      background: ITEM_TH.background,
+      zIndex: 2
+    }
+  }, "\uCC98\uB9AC"))), /*#__PURE__*/React.createElement("tbody", null, pending.map(r => {
     const k = itemKey(r);
     return /*#__PURE__*/React.createElement("tr", {
       key: k,
@@ -4962,11 +5109,11 @@ function ItemManager({
     }, shortName(r["제조사명"]) || "-"), /*#__PURE__*/React.createElement("td", {
       style: ITEM_TD
     }, r["물품식별번호"]), /*#__PURE__*/React.createElement("td", {
-      style: ITEM_TD,
-      title: r["품목"]
+      style: ITEM_TD_FULL
     }, r["품목"] || "-"), /*#__PURE__*/React.createElement("td", {
       style: {
         ...ITEM_TD,
+        ...STICKY_RIGHT,
         textAlign: "center"
       }
     }, /*#__PURE__*/React.createElement("div", {
@@ -5030,12 +5177,19 @@ function ItemManager({
     onClick: () => downloadItemsCsv(filtered),
     title: "\uC9C0\uAE08 \uD45C\uC5D0 \uBCF4\uC774\uB294 \uD488\uBAA9(\uD544\uD130 \uC801\uC6A9)\uC744 \uC5D1\uC140 \uD30C\uC77C\uB85C \uC800\uC7A5"
   }, "\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC"), /*#__PURE__*/React.createElement("button", {
+    style: actionButton(showTrash ? "primary" : "default"),
+    onClick: () => setShowTrash(v => !v),
+    title: "\uC0AD\uC81C\uD55C \uBB3C\uD488\uC744 \uBCF4\uACE0 \uB418\uC0B4\uB9AC\uAE30"
+  }, "\uD734\uC9C0\uD1B5", trash.length ? ` ${trash.length}` : ""), /*#__PURE__*/React.createElement("button", {
     style: actionButton(showAdd ? "default" : "primary"),
     onClick: () => {
       setShowAdd(v => !v);
       setError("");
     }
-  }, showAdd ? "닫기" : "+ 직접 추가"))), showAdd && /*#__PURE__*/React.createElement("div", {
+  }, showAdd ? "닫기" : "+ 직접 추가"))), showTrash && /*#__PURE__*/React.createElement(TrashPanel, {
+    items: trash,
+    onRestore: onRestore
+  }), showAdd && /*#__PURE__*/React.createElement("div", {
     style: {
       borderTop: "1px solid var(--border-subtle)",
       padding: "16px 20px",
@@ -5178,8 +5332,8 @@ function ItemManager({
   }, /*#__PURE__*/React.createElement("table", {
     style: {
       borderCollapse: "collapse",
-      width: "100%",
-      tableLayout: "fixed"
+      width: "max-content",
+      minWidth: "100%"
     }
   }, /*#__PURE__*/React.createElement("colgroup", null, /*#__PURE__*/React.createElement("col", {
     style: {
@@ -5216,7 +5370,12 @@ function ItemManager({
     key: c.key,
     style: ITEM_TH
   }, c.key)), /*#__PURE__*/React.createElement("th", {
-    style: ITEM_TH
+    style: {
+      ...ITEM_TH,
+      ...STICKY_RIGHT,
+      background: ITEM_TH.background,
+      zIndex: 2
+    }
   }, "\uAD00\uB9AC")), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     style: FILTER_TD
   }), ITEM_FILTER_COLUMNS.map(c => /*#__PURE__*/React.createElement("td", {
@@ -5231,7 +5390,11 @@ function ItemManager({
       [c.key]: v
     }))
   }))), /*#__PURE__*/React.createElement("td", {
-    style: FILTER_TD
+    style: {
+      ...FILTER_TD,
+      ...STICKY_RIGHT,
+      zIndex: 2
+    }
   }))), /*#__PURE__*/React.createElement("tbody", null, filtered.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
     colSpan: ITEM_FILTER_COLUMNS.length + 2,
     style: {
@@ -5323,11 +5486,11 @@ function ItemManager({
         fontVariantNumeric: "tabular-nums"
       }
     }, r["물품식별번호"]), /*#__PURE__*/React.createElement("td", {
-      style: ITEM_TD,
-      title: r["품목"]
+      style: ITEM_TD_FULL
     }, r["품목"] || "-")), /*#__PURE__*/React.createElement("td", {
       style: {
         ...ITEM_TD,
+        ...STICKY_RIGHT,
         textAlign: "center",
         padding: "6px"
       }
@@ -5981,10 +6144,12 @@ function App() {
   const {
     activeItems,
     pendingItems,
-    latestCollect
+    latestCollect,
+    trashItems
   } = React.useMemo(() => {
+    const trash = allItems.filter(r => r.__status === "excluded");
     const active = allItems.filter(r => r.__status === "active" && r["제품명"] !== "기타");
-    const pending = allItems.filter(r => !r.__reviewed).map(r => ({
+    const pending = allItems.filter(r => !r.__reviewed && r.__status !== "excluded").map(r => ({
       ...r,
       __inMain: r.__status === "active"
     }));
@@ -5992,6 +6157,7 @@ function App() {
     return {
       activeItems: active,
       pendingItems: pending,
+      trashItems: trash,
       latestCollect: dates.length ? dates[dates.length - 1] : null
     };
   }, [allItems]);
@@ -6036,6 +6202,17 @@ function App() {
     source: "manual"
   }), "추가");
   const editItems = (keys, patch) => dbWrite(sb.from("items").update(recordToItemRow(patch)).in("id", idsOf(keys)), "수정");
+  // 되살리기: 제품이 정해진 물품은 등록 품목으로, 제품 미정(기타)은 일일 신규 품목(검토 대기)으로
+  const restoreItems = async keys => {
+    const ids = idsOf(keys);
+    const ok = await dbWrite(sb.from("items").update({
+      status: "active"
+    }).in("id", ids).neq("product", "기타"), "되살리기");
+    if (ok) await dbWrite(sb.from("items").update({
+      status: "pending",
+      reviewed: false
+    }).in("id", ids).eq("product", "기타"), "되살리기");
+  };
   const signOut = () => sb.auth.signOut();
   const sortedItemsByProduct = React.useMemo(() => Object.fromEntries(PRODUCT_TABS.map(t => [t, prepareItemRecords(itemsByProduct[t] || [], deliveryByProduct[t] || [])])), [itemsByProduct, deliveryByProduct]);
   const toggle = id => setExpanded(prev => ({
@@ -6252,7 +6429,9 @@ function App() {
     onInclude: keys => decide(keys, "include"),
     onExclude: keys => decide(keys, "exclude"),
     onAdd: addItem,
-    onEdit: editItems
+    onEdit: editItems,
+    trash: trashItems,
+    onRestore: restoreItems
   }) : active === "bid-notices" ? /*#__PURE__*/React.createElement(BidNoticePage, {
     bids: rawBids
   }) : active === "item-id-by-vendor" ? /*#__PURE__*/React.createElement(VendorItemTable, {
