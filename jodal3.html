@@ -6309,7 +6309,8 @@ function DeliveryManagerPage({
     border: `1px solid ${on ? "transparent" : "var(--border-button)"}`,
     color: on ? "var(--text-primary)" : "var(--text-secondary)"
   });
-  const cols = [["납품요구일자", 110], ["제품", 84], ["수요기관", 170], ["납품업체", 150], ["물품식별번호", 108], ["물품식별명"], ["수량", 70], ["계약단가", 120], ["납품금액", 130], ["", 64]];
+  // 물품식별명이 가장 길어 나머지 칸은 좁게 두고 남는 너비를 물품식별명에 준다
+  const cols = [["납품요구일자", 104], ["제품", 92], ["수요기관", 140], ["납품업체", 110], ["물품식별번호", 100], ["물품식별명"], ["수량", 56], ["계약단가", 112], ["납품금액", 120], ["", 48]];
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
