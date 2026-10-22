@@ -6281,12 +6281,59 @@ function DeliveryEditor({
     return `${label}: ${h.before?.[k] ?? "-"} → ${h.after[k] ?? "-"}`;
   }).join(", ")))));
 }
+
+// 칸별 필터는 물품식별번호 관리와 같은 방식 (글자 칸: 포함 검색, 드롭다운 칸: 같은 값, 드롭다운 목록은 다른 필터 결과 안에서만)
+// 물품식별명이 가장 길어 나머지 칸은 좁게 두고 남는 너비를 물품식별명에 준다
+const DLVR_LIST_COLUMNS = [{
+  key: "dlvr_req_date",
+  label: "납품요구일자",
+  type: "text",
+  width: 108
+}, {
+  key: "product",
+  label: "제품",
+  type: "select",
+  width: 96
+}, {
+  key: "demand_org",
+  label: "수요기관",
+  type: "text",
+  width: 140
+}, {
+  key: "vendor",
+  label: "납품업체",
+  type: "select",
+  width: 110
+}, {
+  key: "item_id",
+  label: "물품식별번호",
+  type: "text",
+  width: 104
+}, {
+  key: "item_name",
+  label: "물품식별명",
+  type: "text"
+}, {
+  key: "quantity",
+  label: "수량",
+  type: "text",
+  width: 56
+}, {
+  key: "unit_price",
+  label: "계약단가",
+  type: "text",
+  width: 108
+}, {
+  key: "amount",
+  label: "납품금액",
+  type: "text",
+  width: 116
+}];
 function DeliveryManagerPage({
   onChanged
 }) {
   const [rows, setRows] = React.useState(null);
-  const [tab, setTab] = React.useState("ALL");
-  const [q, setQ] = React.useState("");
+  const [filters, setFilters] = React.useState({});
   const [limit, setLimit] = React.useState(100);
   const [editing, setEditing] = React.useState(null);
   const load = React.useCallback(() => {
@@ -6297,152 +6344,191 @@ function DeliveryManagerPage({
   React.useEffect(() => {
     load();
   }, [load]);
-  const needle = q.trim().toLowerCase();
-  const filtered = (rows || []).filter(r => (tab === "ALL" || r.product === tab) && (!needle || ["demand_org", "vendor", "item_id", "item_name", "business_name", "dlvr_req_no", "contract_no"].some(c => String(r[c] || "").toLowerCase().includes(needle))));
-  const chip = on => ({
-    all: "unset",
-    cursor: "pointer",
-    padding: "7px 16px",
-    borderRadius: 999,
-    font: "600 14px var(--font-body)",
-    background: on ? "var(--accent-primary-strong)" : "var(--surface-card)",
-    border: `1px solid ${on ? "transparent" : "var(--border-button)"}`,
-    color: on ? "var(--text-primary)" : "var(--text-secondary)"
+  const all = rows || [];
+  const matches = (r, skipKey) => DLVR_LIST_COLUMNS.every(({
+    key,
+    type
+  }) => {
+    if (key === skipKey) return true;
+    const f = (filters[key] || "").trim();
+    if (!f) return true;
+    const v = String(r[key] ?? "");
+    return type === "select" ? v.trim() === f : v.toLowerCase().includes(f.toLowerCase());
   });
-  // 물품식별명이 가장 길어 나머지 칸은 좁게 두고 남는 너비를 물품식별명에 준다
-  const cols = [["납품요구일자", 104], ["제품", 92], ["수요기관", 140], ["납품업체", 110], ["물품식별번호", 100], ["물품식별명"], ["수량", 56], ["계약단가", 112], ["납품금액", 120], ["", 48]];
+  const filtered = all.filter(r => matches(r));
+  const optionsFor = key => Array.from(new Set(all.filter(r => matches(r, key)).map(r => String(r[key] ?? "").trim()).filter(Boolean))).sort((x, y) => x.localeCompare(y, "ko"));
+  const activeFilterCount = Object.values(filters).filter(v => (v || "").trim()).length;
+  const setFilter = (key, v) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: v
+    }));
+    setLimit(100);
+  };
+  const cell = (r, key) => {
+    if (key === "product") return /*#__PURE__*/React.createElement(ProductCell, {
+      product: r.product
+    });
+    if (key === "unit_price" || key === "amount") return won(r[key]);
+    if (key === "vendor") return shortName(r.vendor) || "-";
+    return r[key] ?? "-";
+  };
+  const cellStyle = (key, r) => {
+    if (key === "item_name") return ITEM_TD_FULL;
+    if (key === "dlvr_req_date") return {
+      ...ITEM_TD,
+      color: "var(--text-secondary)",
+      fontVariantNumeric: "tabular-nums"
+    };
+    if (key === "item_id") return {
+      ...ITEM_TD,
+      fontVariantNumeric: "tabular-nums"
+    };
+    if (key === "vendor") return {
+      ...ITEM_TD,
+      ...(String(r.vendor || "").includes(OUR_COMPANY_MARK) ? {
+        color: OUR_COLOR,
+        fontWeight: 700
+      } : {})
+    };
+    if (key === "quantity" || key === "unit_price") return {
+      ...ITEM_TD,
+      textAlign: "right",
+      fontVariantNumeric: "tabular-nums"
+    };
+    if (key === "amount") return {
+      ...ITEM_TD,
+      textAlign: "right",
+      fontVariantNumeric: "tabular-nums",
+      fontWeight: 600
+    };
+    return ITEM_TD;
+  };
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 16
+      background: "var(--surface-card)",
+      border: "1px solid var(--border-default)",
+      borderRadius: "var(--radius-xl)",
+      overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+      flexWrap: "wrap",
+      padding: "18px 20px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "baseline",
       gap: 10,
       flexWrap: "wrap"
     }
-  }, ["ALL", ...PRODUCT_TABS].map(t => /*#__PURE__*/React.createElement("button", {
-    key: t,
-    onClick: () => {
-      setTab(t);
-      setLimit(100);
-    },
-    style: chip(tab === t)
-  }, PRODUCT_LABEL[t], " ", /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("span", {
     style: {
-      opacity: 0.7,
-      marginLeft: 2
+      font: "700 18px var(--font-display)",
+      color: "var(--text-primary)"
     }
-  }, (rows || []).filter(r => t === "ALL" || r.product === t).length))), /*#__PURE__*/React.createElement("input", {
-    value: q,
-    onChange: e => {
-      setQ(e.target.value);
-      setLimit(100);
-    },
-    placeholder: "\uC218\uC694\uAE30\uAD00\xB7\uC5C5\uCCB4\xB7\uBB3C\uD488\uC2DD\uBCC4\uBC88\uD638\xB7\uC0AC\uC5C5\uBA85 \uAC80\uC0C9",
+  }, "\uB0A9\uD488\uC694\uAD6C \uBB3C\uD488\uB0B4\uC5ED"), /*#__PURE__*/React.createElement("span", {
     style: {
-      marginLeft: "auto",
-      width: 300,
-      padding: "8px 12px",
-      borderRadius: 8,
-      border: "1px solid var(--border-button)",
-      font: "500 14px var(--font-body)",
-      background: "var(--surface-card)"
-    }
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      font: "500 13px var(--font-body)",
+      font: "var(--text-body-sm)",
       color: "var(--text-tertiary)"
     }
-  }, "\uB4F1\uB85D \uBB3C\uD488\uC758 \uB0A9\uD488\uC694\uAD6C ", filtered.length.toLocaleString(), "\uAC74 \xB7 \uC904\uC744 \uB204\uB974\uBA74 \uBAA8\uB4E0 \uCE78\uC744 \uACE0\uCE60 \uC218 \uC788\uC5B4\uC694 (\uC870\uB2EC\uD1B5\uACC4\xB7\uBA54\uC77C \uC9D1\uACC4\uC5D0 \uBC14\uB85C \uBC18\uC601)"), /*#__PURE__*/React.createElement("div", {
+  }, rows === null ? "불러오는 중…" : activeFilterCount ? `${filtered.length.toLocaleString()}건 / 전체 ${all.length.toLocaleString()}건` : `${all.length.toLocaleString()}건`), /*#__PURE__*/React.createElement("span", {
     style: {
-      background: "var(--surface-card)",
-      border: "1px solid var(--border-default)",
-      borderRadius: "var(--radius-xl)",
+      font: "var(--text-caption)",
+      color: "var(--text-tertiary)"
+    }
+  }, "\uC904\uC744 \uB204\uB974\uBA74 \uBAA8\uB4E0 \uCE78\uC744 \uACE0\uCE60 \uC218 \uC788\uC5B4\uC694 (\uC870\uB2EC\uD1B5\uACC4\xB7\uBA54\uC77C \uC9D1\uACC4\uC5D0 \uBC14\uB85C \uBC18\uC601)")), activeFilterCount > 0 && /*#__PURE__*/React.createElement("button", {
+    style: actionButton("default"),
+    onClick: () => {
+      setFilters({});
+      setLimit(100);
+    }
+  }, "\uD544\uD130 \uCD08\uAE30\uD654")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: "1px solid var(--border-subtle)",
+      maxHeight: 680,
       overflow: "auto"
     }
   }, /*#__PURE__*/React.createElement("table", {
     className: "jd-hover jd-rowlink",
     style: {
       width: "100%",
-      minWidth: 1100,
+      minWidth: 1000,
       borderCollapse: "collapse",
       tableLayout: "fixed"
     }
-  }, /*#__PURE__*/React.createElement("colgroup", null, cols.map(([c, w], i) => /*#__PURE__*/React.createElement("col", {
-    key: i,
-    style: w ? {
-      width: w
+  }, /*#__PURE__*/React.createElement("colgroup", null, DLVR_LIST_COLUMNS.map(c => /*#__PURE__*/React.createElement("col", {
+    key: c.key,
+    style: c.width ? {
+      width: c.width
     } : undefined
-  }))), /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, cols.map(([c], i) => /*#__PURE__*/React.createElement("th", {
-    key: i,
+  })), /*#__PURE__*/React.createElement("col", {
+    style: {
+      width: 48
+    }
+  })), /*#__PURE__*/React.createElement("thead", {
+    style: {
+      position: "sticky",
+      top: 0,
+      zIndex: 1
+    }
+  }, /*#__PURE__*/React.createElement("tr", null, DLVR_LIST_COLUMNS.map(c => /*#__PURE__*/React.createElement("th", {
+    key: c.key,
     style: ITEM_TH
-  }, c)))), /*#__PURE__*/React.createElement("tbody", null, rows === null ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: cols.length,
+  }, c.label)), /*#__PURE__*/React.createElement("th", {
+    style: {
+      ...ITEM_TH,
+      ...STICKY_RIGHT,
+      background: ITEM_TH.background,
+      zIndex: 2
+    }
+  }, "\uC218\uC815")), /*#__PURE__*/React.createElement("tr", null, DLVR_LIST_COLUMNS.map(c => /*#__PURE__*/React.createElement("td", {
+    key: c.key,
+    style: FILTER_TD
+  }, /*#__PURE__*/React.createElement(ColumnFilter, {
+    type: c.type,
+    value: filters[c.key] || "",
+    options: c.type === "select" ? optionsFor(c.key) : [],
+    onChange: v => setFilter(c.key, v)
+  }))), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...FILTER_TD,
+      ...STICKY_RIGHT,
+      zIndex: 2
+    }
+  }))), /*#__PURE__*/React.createElement("tbody", null, rows === null ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: DLVR_LIST_COLUMNS.length + 1,
     style: {
       ...ITEM_TD,
       textAlign: "center",
       color: "var(--text-tertiary)",
       padding: 28
     }
-  }, "\uBD88\uB7EC\uC624\uB294 \uC911\u2026")) : filtered.slice(0, limit).map(r => /*#__PURE__*/React.createElement("tr", {
+  }, "\uBD88\uB7EC\uC624\uB294 \uC911\u2026")) : filtered.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: DLVR_LIST_COLUMNS.length + 1,
+    style: {
+      padding: "28px 12px",
+      font: "var(--text-body-sm)",
+      color: "var(--text-tertiary)",
+      textAlign: "center"
+    }
+  }, "\uC870\uAC74\uC5D0 \uB9DE\uB294 \uB0A9\uD488\uC694\uAD6C\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")) : filtered.slice(0, limit).map(r => /*#__PURE__*/React.createElement("tr", {
     key: `${r.id}-${r.product}`,
     onClick: () => setEditing(r),
     title: "\uB20C\uB7EC\uC11C \uC218\uC815"
-  }, /*#__PURE__*/React.createElement("td", {
+  }, DLVR_LIST_COLUMNS.map(c => /*#__PURE__*/React.createElement("td", {
+    key: c.key,
+    style: cellStyle(c.key, r),
+    title: c.key === "demand_org" || c.key === "vendor" ? r[c.key] : undefined
+  }, cell(r, c.key))), /*#__PURE__*/React.createElement("td", {
     style: {
       ...ITEM_TD,
-      color: "var(--text-secondary)",
-      fontVariantNumeric: "tabular-nums"
-    }
-  }, r.dlvr_req_date || "-"), /*#__PURE__*/React.createElement("td", {
-    style: ITEM_TD
-  }, /*#__PURE__*/React.createElement(ProductCell, {
-    product: r.product
-  })), /*#__PURE__*/React.createElement("td", {
-    style: ITEM_TD,
-    title: r.demand_org
-  }, r.demand_org || "-"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...ITEM_TD,
-      ...(String(r.vendor || "").includes(OUR_COMPANY_MARK) ? {
-        color: OUR_COLOR,
-        fontWeight: 700
-      } : {})
-    },
-    title: r.vendor
-  }, shortName(r.vendor) || "-"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...ITEM_TD,
-      fontVariantNumeric: "tabular-nums"
-    }
-  }, r.item_id), /*#__PURE__*/React.createElement("td", {
-    style: ITEM_TD_FULL
-  }, r.item_name || "-"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...ITEM_TD,
-      textAlign: "right",
-      fontVariantNumeric: "tabular-nums"
-    }
-  }, r.quantity ?? "-"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...ITEM_TD,
-      textAlign: "right",
-      fontVariantNumeric: "tabular-nums"
-    }
-  }, won(r.unit_price)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...ITEM_TD,
-      textAlign: "right",
-      fontVariantNumeric: "tabular-nums",
-      fontWeight: 600
-    }
-  }, won(r.amount)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...ITEM_TD,
+      ...STICKY_RIGHT,
       textAlign: "center",
       padding: 4
     }
@@ -6463,13 +6549,17 @@ function DeliveryManagerPage({
       borderRadius: "var(--radius-md)",
       color: "var(--text-secondary)"
     }
-  }, /*#__PURE__*/React.createElement(PencilIcon, null)))))))), rows && filtered.length > limit && /*#__PURE__*/React.createElement("button", {
-    onClick: () => setLimit(n => n + 200),
+  }, /*#__PURE__*/React.createElement(PencilIcon, null)))))))), rows && filtered.length > limit && /*#__PURE__*/React.createElement("div", {
     style: {
-      ...actionButton("default"),
-      alignSelf: "center"
+      display: "flex",
+      justifyContent: "center",
+      padding: 14,
+      borderTop: "1px solid var(--border-subtle)"
     }
-  }, "\uB354 \uBCF4\uAE30 (", (filtered.length - limit).toLocaleString(), "\uAC74 \uB0A8\uC74C)"), editing && /*#__PURE__*/React.createElement(DeliveryEditor, {
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setLimit(n => n + 200),
+    style: actionButton("default")
+  }, "\uB354 \uBCF4\uAE30 (", (filtered.length - limit).toLocaleString(), "\uAC74 \uB0A8\uC74C)")), editing && /*#__PURE__*/React.createElement(DeliveryEditor, {
     row: editing,
     onClose: () => setEditing(null),
     onSaved: () => {
