@@ -323,6 +323,16 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--surface-page);font-family:var(--font-body)}
+  /* 반응형 배치 — 화면(칸)이 좁아지면 나란히 놓인 것을 위아래로 쌓는다 */
+  .jd-split-box{container-type:inline-size}
+  .jd-split{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)}
+  .jd-split > .jd-split-side{border-left:1px solid var(--border-subtle)}
+  @container (max-width: 900px){
+    .jd-split{grid-template-columns:minmax(0,1fr);row-gap:24px}
+    .jd-split > .jd-split-side{border-left:none;border-top:1px solid var(--border-subtle);padding-top:24px !important}
+  }
+  .jd-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:stretch}
+  .jd-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
@@ -2042,28 +2052,52 @@ function ManufacturerTable({
 }
 
 // ── 월별/누적 매출 차트 공용 ──────────────────────────────────────
-const TREND_W = 620,
-  TREND_H = 260;
+// 차트는 들어갈 칸의 실제 너비(px)로 다시 그린다 — 화면이 넓어지면 차트도 넓어지고, 글자 크기는 그대로.
+// (예전에는 620×260 그림을 통째로 늘리고 줄여서 넓은 화면에선 글자가 커지고 좁은 화면에선 작아졌다)
 const TREND_PAD = {
   l: 80,
   r: 80,
   t: 36,
   b: 28
 };
-const TREND_INNER_W = TREND_W - TREND_PAD.l - TREND_PAD.r;
-const TREND_INNER_H = TREND_H - TREND_PAD.t - TREND_PAD.b;
-const TREND_BASE_Y = TREND_PAD.t + TREND_INNER_H;
+function trendDims(width) {
+  const W = Math.max(360, Math.round(width || 620));
+  const H = Math.round(Math.min(400, Math.max(240, W * 0.42))); // 높이도 너비에 비례 (240~400)
+  const IW = W - TREND_PAD.l - TREND_PAD.r,
+    IH = H - TREND_PAD.t - TREND_PAD.b;
+  return {
+    W,
+    H,
+    PAD: TREND_PAD,
+    IW,
+    IH,
+    BASE: TREND_PAD.t + IH
+  };
+}
+// 요소의 실제 너비를 따라가는 훅 (창 크기·사이드바 접기에 반응)
+function useElementWidth(ref, fallback) {
+  const [w, setW] = React.useState(fallback);
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setW(el.getBoundingClientRect().width || fallback);
+    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width || fallback));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return w;
+}
 function seriesColor(s, i) {
   return s.name.includes(OUR_COMPANY_MARK) ? OUR_CHART_COLOR : COMPETITOR_LINE_COLORS[Math.min(i, COMPETITOR_LINE_COLORS.length - 1)];
 }
 function seriesBarColor(s, i) {
   return s.name.includes(OUR_COMPANY_MARK) ? OUR_BAR_COLOR : COMPETITOR_BAR_COLORS[Math.min(i, COMPETITOR_BAR_COLORS.length - 1)];
 }
-function trendBand(months) {
-  const bandW = TREND_INNER_W / Math.max(1, months.length);
+function trendBand(months, d) {
+  const bandW = d.IW / Math.max(1, months.length);
   return {
     bandW,
-    xOf: i => TREND_PAD.l + bandW * (i + 0.5)
+    xOf: i => d.PAD.l + bandW * (i + 0.5)
   };
 }
 
@@ -2148,59 +2182,62 @@ function TrendLegend({
 
 // y축 그리드(0/50/100%) + 좌축(월별 매출)·우축(누적 매출) 라벨 + x축 월 라벨(두 달 간격, 1월은 연도로 표기)
 function TrendAxes({
+  d,
   months,
   leftMax,
   rightMax,
   xOf
 }) {
+  const bandW = d.IW / Math.max(1, months.length);
   return /*#__PURE__*/React.createElement(React.Fragment, null, [0, 0.5, 1].map(f => {
-    const y = TREND_BASE_Y - f * TREND_INNER_H;
+    const y = d.BASE - f * d.IH;
     return /*#__PURE__*/React.createElement("g", {
       key: f
     }, /*#__PURE__*/React.createElement("line", {
-      x1: TREND_PAD.l,
+      x1: d.PAD.l,
       y1: y,
-      x2: TREND_W - TREND_PAD.r,
+      x2: d.W - d.PAD.r,
       y2: y,
       stroke: "var(--border-subtle)",
       strokeWidth: "1"
     }), /*#__PURE__*/React.createElement("text", {
-      x: TREND_PAD.l - 8,
+      x: d.PAD.l - 8,
       y: y + 4,
       textAnchor: "end",
       fontSize: "13",
       fill: "var(--text-secondary)"
     }, formatEokMan(leftMax * f)), /*#__PURE__*/React.createElement("text", {
-      x: TREND_W - TREND_PAD.r + 8,
+      x: d.W - d.PAD.r + 8,
       y: y + 4,
       textAnchor: "start",
       fontSize: "13",
       fill: "var(--text-secondary)"
     }, formatEokMan(rightMax * f)));
   }), /*#__PURE__*/React.createElement("text", {
-    x: TREND_PAD.l - 8,
-    y: TREND_PAD.t - 18,
+    x: d.PAD.l - 8,
+    y: d.PAD.t - 18,
     textAnchor: "end",
     fontSize: "13",
     fontWeight: "600",
     fill: "var(--text-tertiary)"
   }, "\uC6D4\uBCC4(\uB9C9\uB300)"), /*#__PURE__*/React.createElement("text", {
-    x: TREND_W - TREND_PAD.r + 8,
-    y: TREND_PAD.t - 18,
+    x: d.W - d.PAD.r + 8,
+    y: d.PAD.t - 18,
     textAnchor: "start",
     fontSize: "13",
     fontWeight: "600",
     fill: "var(--text-tertiary)"
   }, "\uB204\uC801(\uC120)"), months.map((m, i) => {
     // 12개월 이하면 매월, 그보다 길면 두 달 간격으로 라벨을 단다 (겹침 방지)
-    const step = months.length <= 12 ? 1 : 2;
-    if (i % step !== 0 && i !== months.length - 1) return null;
     const mon = Number(m.slice(5, 7));
     const label = mon === 1 ? `${m.slice(0, 4)}년` : i === 0 ? `${m.slice(2, 4)}년 ${mon}월` : `${mon}월`;
+    // 기간이 길거나 한 달 칸이 좁으면 라벨이 겹치지 않게 건너뛴다
+    const step = Math.max(months.length <= 12 ? 1 : 2, bandW >= 46 ? 1 : bandW >= 24 ? 2 : 3);
+    if (i % step !== 0 && i !== months.length - 1) return null;
     return /*#__PURE__*/React.createElement("text", {
       key: m,
       x: xOf(i),
-      y: TREND_H - TREND_PAD.b + 18,
+      y: d.H - d.PAD.b + 18,
       textAnchor: "middle",
       fontSize: "13",
       fill: "var(--text-secondary)"
@@ -2210,6 +2247,7 @@ function TrendAxes({
 
 // 한 달의 전 제조사 값을 한 번에 보여주는 툴팁 (mode: index) — 월 매출 / 누적 두 열
 function TrendTooltip({
+  d,
   x,
   title,
   items,
@@ -2220,8 +2258,8 @@ function TrendTooltip({
   const rowY = idx => 54 + idx * 17;
   const rowCount = items.length + (others ? 1 : 0);
   const tipH = rowY(rowCount) + 22;
-  const tipX = Math.max(4, Math.min(TREND_W - tipW - 4, x + 12 + tipW > TREND_W - TREND_PAD.r ? x - tipW - 12 : x + 12));
-  const tipY = TREND_PAD.t;
+  const tipX = Math.max(4, Math.min(d.W - tipW - 4, x + 12 + tipW > d.W - d.PAD.r ? x - tipW - 12 : x + 12));
+  const tipY = d.PAD.t;
   const colMonth = tipX + tipW - 104,
     colCum = tipX + tipW - 8;
   return /*#__PURE__*/React.createElement("g", {
@@ -2339,41 +2377,50 @@ function TrendComboChart({
   onSelect
 }) {
   const [hoverIndex, setHoverIndex] = React.useState(null);
+  const boxRef = React.useRef(null);
+  const d = trendDims(useElementWidth(boxRef, 620));
   const {
     bandW,
     xOf
-  } = trendBand(months);
+  } = trendBand(months, d);
   const barW = Math.max(4, bandW * 0.62);
   const totals = months.map(m => series.reduce((sum, s) => sum + (s.monthly.get(m)?.amount || 0), 0));
   const maxTotal = Math.max(1, ...totals);
-  const hOf = amt => amt / maxTotal * TREND_INNER_H;
+  const hOf = amt => amt / maxTotal * d.IH;
   const cumulative = series.map(s => {
     let run = 0;
     return months.map(m => run += s.monthly.get(m)?.amount || 0);
   });
   const maxCum = Math.max(1, ...cumulative.map(c => c[c.length - 1] || 0));
-  const yCum = v => TREND_BASE_Y - v / maxCum * TREND_INNER_H;
+  const yCum = v => d.BASE - v / maxCum * d.IH;
   // 자사 선이 경쟁사 선에 가려지지 않도록 맨 마지막(맨 위)에 그린다
   const lineOrder = series.map((s, si) => si).sort((a, b) => series[a].name.includes(OUR_COMPANY_MARK) - series[b].name.includes(OUR_COMPANY_MARK));
-  return /*#__PURE__*/React.createElement("svg", {
-    viewBox: `0 0 ${TREND_W} ${TREND_H}`,
+  return /*#__PURE__*/React.createElement("div", {
+    ref: boxRef,
     style: {
-      width: "100%",
-      height: "auto",
+      width: "100%"
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    viewBox: `0 0 ${d.W} ${d.H}`,
+    width: "100%",
+    height: d.H,
+    style: {
+      display: "block",
       overflow: "visible"
     },
     onMouseLeave: () => setHoverIndex(null)
   }, /*#__PURE__*/React.createElement(TrendAxes, {
+    d: d,
     months: months,
     leftMax: maxTotal,
     rightMax: maxCum,
     xOf: xOf
   }), months.map((m, i) => /*#__PURE__*/React.createElement("rect", {
     key: `band-${m}`,
-    x: TREND_PAD.l + bandW * i,
-    y: TREND_PAD.t,
+    x: d.PAD.l + bandW * i,
+    y: d.PAD.t,
     width: bandW,
-    height: TREND_INNER_H,
+    height: d.IH,
     fill: selected === m || hoverIndex === i ? "var(--surface-muted)" : "transparent",
     onMouseEnter: () => setHoverIndex(i),
     style: {
@@ -2381,7 +2428,7 @@ function TrendComboChart({
     },
     onClick: () => onSelect(selected === m ? null : m)
   })), months.map((m, i) => {
-    let top = TREND_BASE_Y;
+    let top = d.BASE;
     return /*#__PURE__*/React.createElement("g", {
       key: m,
       onMouseEnter: () => setHoverIndex(i)
@@ -2462,6 +2509,7 @@ function TrendComboChart({
       cum: rest.reduce((sum, it) => sum + it.cum, 0)
     } : null;
     return /*#__PURE__*/React.createElement(TrendTooltip, {
+      d: d,
       x: xOf(hoverIndex),
       title: `${monthLabel(months[hoverIndex])} · 클릭하면 계약 목록`,
       items: shown,
@@ -2471,7 +2519,7 @@ function TrendComboChart({
         cum: cumulative.reduce((sum, c) => sum + c[hoverIndex], 0)
       }
     });
-  })());
+  })()));
 }
 
 // ── 월 실적 보고표 (보고서 양식: 기준월 / 누적 / 전년 점유율 / 목표, 그리고 자사 월별 매출 전년 대비) ──
@@ -2696,11 +2744,7 @@ function MonthlyPerformanceReport({
       whiteSpace: "nowrap"
     }
   }, "\uC81C\uC870\uC0AC\uBCC4 \uC2E4\uC801\uD45C \u2922"))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr 0.8fr",
-      gap: 12
-    }
+    className: "jd-summary"
   }, summaryCards.map(c => /*#__PURE__*/React.createElement("div", {
     key: c.label,
     style: {
@@ -3061,9 +3105,10 @@ function CompetitorLineChart({
     onChange: onPeriodChange,
     volumes: volumes
   }), /*#__PURE__*/React.createElement("div", {
+    className: "jd-split-box"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "jd-split",
     style: {
-      display: "grid",
-      gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)",
       background: "var(--surface-card)",
       border: "1px solid var(--border-default)",
       borderRadius: "var(--radius-xl)",
@@ -3088,12 +3133,14 @@ function CompetitorLineChart({
     highlightName: highlightName,
     selected: selected,
     onSelect: setSelected
-  })), /*#__PURE__*/React.createElement(Panel, {
-    title: "\uC81C\uC870\uC0AC\uBCC4 \uC2E4\uC801",
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "jd-split-side",
     style: {
-      ...INNER_PANEL_STYLE,
-      borderLeft: "1px solid var(--border-subtle)"
+      minWidth: 0
     }
+  }, /*#__PURE__*/React.createElement(Panel, {
+    title: "\uC81C\uC870\uC0AC\uBCC4 \uC2E4\uC801",
+    style: INNER_PANEL_STYLE
   }, /*#__PURE__*/React.createElement(ManufacturerTable, {
     rows: thisYearStat.rows,
     total: thisYearStat.total,
@@ -3101,7 +3148,7 @@ function CompetitorLineChart({
     thisByName: thisByName,
     highlightName: highlightName,
     onToggleHighlight: toggleHighlight
-  })), selected && /*#__PURE__*/React.createElement("div", {
+  }))), selected && /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "1 / -1",
       margin: "24px 24px 0",
@@ -3207,7 +3254,7 @@ function CompetitorLineChart({
       textAlign: "right",
       fontVariantNumeric: "tabular-nums"
     }
-  }, parseAmount(r["납품금액"]).toLocaleString(), "\uC6D0")))))))), /*#__PURE__*/React.createElement(SectionLabel, null, "\uC0C1\uC138 \uBD84\uC11D"), (() => {
+  }, parseAmount(r["납품금액"]).toLocaleString(), "\uC6D0"))))))))), /*#__PURE__*/React.createElement(SectionLabel, null, "\uC0C1\uC138 \uBD84\uC11D"), (() => {
     const detailPanels = [{
       key: "month",
       title: lastMonthTitle,
@@ -3235,12 +3282,7 @@ function CompetitorLineChart({
     }];
     const opened = detailPanels.find(d => d.key === detailOpen);
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr 1fr",
-        gap: 16,
-        alignItems: "stretch"
-      }
+      className: "jd-cards"
     }, detailPanels.map(d => /*#__PURE__*/React.createElement("div", {
       key: d.key,
       onClick: () => setDetailOpen(d.key),
@@ -4345,37 +4387,38 @@ function saveItemOverrides(o) {
 }
 
 // 표 머리글 아래 칸별 필터 — 범주형은 "(전체)" 드롭다운, 텍스트는 돋보기 검색
+// 품목이 가장 중요한 정보라, 다른 칸은 좁게 두고 품목이 남는 너비를 모두 쓴다 (길면 줄바꿈해 전부 보임)
 const ITEM_FILTER_COLUMNS = [{
   key: "등록일자",
   type: "text",
-  width: 140
+  width: 108
 }, {
   key: "제품명",
   type: "select",
-  width: 110
+  width: 92
 }, {
   key: "세부분류",
   type: "select",
-  width: 170
+  width: 130
 }, {
   key: "제조사명",
   type: "select",
-  width: 170
+  width: 130
 }, {
   key: "물품식별번호",
   type: "text",
-  width: 130
+  width: 108
 }, {
   key: "품목",
   type: "text"
 }];
-// 일일 신규 품목 표 — 제품명 칸에 제품 선택 상자가 들어가므로 넓히고, 비어 있기 쉬운 세부분류는 줄인다
+// 일일 신규 품목 표 — 제품명·세부분류 칸에는 선택·입력 상자가 들어가 조금 넓다
 const PENDING_COL_WIDTH = {
-  "제품명": 150,
-  "세부분류": 190,
-  "제조사명": 140,
-  "물품식별번호": 120,
-  "등록일자": 120
+  "제품명": 136,
+  "세부분류": 150,
+  "제조사명": 120,
+  "물품식별번호": 108,
+  "등록일자": 108
 };
 const ITEM_TH = {
   background: "var(--surface-muted)",
@@ -4403,7 +4446,11 @@ const ITEM_TD_FULL = {
   ...ITEM_TD,
   maxWidth: "none",
   overflow: "visible",
-  textOverflow: "clip"
+  textOverflow: "clip",
+  whiteSpace: "normal",
+  wordBreak: "keep-all",
+  overflowWrap: "anywhere",
+  lineHeight: 1.45
 };
 // 가로로 스크롤해도 관리/처리 버튼은 오른쪽에 붙어 있게
 const STICKY_RIGHT = {
@@ -5097,7 +5144,7 @@ function ItemManager({
   }, "\uC0C8\uB85C \uB4E4\uC5B4\uC628 \uD488\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4. \uB9E4\uC77C \uC218\uC9D1\uB41C \uC2E0\uADDC \uBB3C\uD488\uC2DD\uBCC4\uBC88\uD638\uAC00 \uC5EC\uAE30\uC5D0 \uC62C\uB77C\uC635\uB2C8\uB2E4.") : /*#__PURE__*/React.createElement("div", {
     style: {
       borderTop: "1px solid var(--border-subtle)",
-      maxHeight: 360,
+      maxHeight: 420,
       overflow: "auto"
     }
   }, ["all", ...PRODUCT_TABS].map(t => /*#__PURE__*/React.createElement("datalist", {
@@ -5109,8 +5156,9 @@ function ItemManager({
   })))), /*#__PURE__*/React.createElement("table", {
     style: {
       borderCollapse: "collapse",
-      width: "max-content",
-      minWidth: "100%"
+      width: "100%",
+      minWidth: 900,
+      tableLayout: "fixed"
     }
   }, /*#__PURE__*/React.createElement("colgroup", null, /*#__PURE__*/React.createElement("col", {
     style: {
@@ -5249,7 +5297,8 @@ function ItemManager({
       style: {
         ...ITEM_TD,
         ...mfrStyle(r)
-      }
+      },
+      title: r["제조사명"]
     }, shortName(r["제조사명"]) || "-"), /*#__PURE__*/React.createElement("td", {
       style: ITEM_TD
     }, r["물품식별번호"]), /*#__PURE__*/React.createElement("td", {
@@ -5495,8 +5544,9 @@ function ItemManager({
   }, /*#__PURE__*/React.createElement("table", {
     style: {
       borderCollapse: "collapse",
-      width: "max-content",
-      minWidth: "100%"
+      width: "100%",
+      minWidth: 900,
+      tableLayout: "fixed"
     }
   }, /*#__PURE__*/React.createElement("colgroup", null, !readOnly && /*#__PURE__*/React.createElement("col", {
     style: {
