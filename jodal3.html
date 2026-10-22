@@ -388,6 +388,7 @@ function MenuIcon({
     "jodal-stats": "M4 20V10M10 20V4M16 20v-7M22 20H2",
     "new-items": "M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6",
     "item-id-manage": "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
+    "delivery-manage": "M3 7h13v10H3zM16 10h3l2 3v4h-5M7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4M18 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4",
     "item-id-by-vendor": "M3 21h18M5 21V7l7-4 7 4v14M9 10h1M14 10h1M9 14h1M14 14h1",
     "bid-notices": "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6",
     "bid-keywords": "M3 12V4h8l10 10-8 8zM7.5 7.5h.01",
@@ -458,6 +459,11 @@ const MENU = [{
 }, {
   id: "item-id-manage",
   label: "물품식별번호 관리",
+  depth: 1,
+  group: "admin"
+}, {
+  id: "delivery-manage",
+  label: "납품요구 물품내역 관리",
   depth: 1,
   group: "admin"
 }, {
@@ -660,14 +666,16 @@ const DLVR_FIELD = {
   "납품요구총금액": "total_amount"
 };
 // 시트에서 옮겨 온 건은 원본(raw)을 그대로 쓰고, 없으면 칸에서 만든다 (날짜는 시트와 같은 YYYYMMDD)
+// DB 칸 → 화면에서 쓰는 레코드 (예전 시트와 같은 이름·형식: 날짜 YYYYMMDD). 원본(raw)은 쓰지 않는다 —
+// "납품요구 물품내역 관리"에서 고친 값이 조달통계에 바로 반영되게.
 function deliveryToRecord(d) {
-  if (d.raw && d.raw["납품요구번호"]) return d.raw;
   const rec = {};
   for (const [k, col] of Object.entries(DLVR_FIELD)) rec[k] = d[col] == null ? "" : String(d[col]);
   rec["납품요구일자"] = rec["납품요구일자"].replace(/-/g, "");
   rec["납품기한일자"] = rec["납품기한일자"].replace(/-/g, "");
   return rec;
 }
+const DLVR_SELECT = ["id", "product", "product_group", ...Object.values(DLVR_FIELD)].join(", ");
 async function loadItemRecords() {
   const rows = await fetchAll(() => sb.from("items").select("*").order("id"));
   return rows.map(itemToRecord);
@@ -6139,6 +6147,337 @@ function KeywordPanel({
     }
   }, "\uD14C\uB450\uB9AC\uAC00 \uC788\uB294 \uD0A4\uC6CC\uB4DC\uB294 \uC9C1\uC811 \uCD94\uAC00\uD55C \uAC83\uC774\uC5D0\uC694. \uD0A4\uC6CC\uB4DC\uC5D0 \uB9C8\uC6B0\uC2A4\uB97C \uC62C\uB9AC\uBA74 \uB204\uAC00 \uB123\uC5C8\uB294\uC9C0 \uBCF4\uC5EC\uC694."));
 }
+
+// ── 납품요구 물품내역 관리 — 등록 물품의 납품요구를 보고 모든 칸을 고칠 수 있다 ─────────────────────────────
+// 고친 값은 DB에 바로 저장되고 조달통계·보고 메일 집계에 반영된다. 바뀐 칸은 delivery_changes에 이력으로 남는다.
+const DLVR_EDIT_FIELDS = [["납품요구일자", "dlvr_req_date", "date"], ["납품요구번호", "dlvr_req_no", "text"], ["납품요구변경차수", "change_ord", "text"], ["수요기관", "demand_org", "text"], ["수요기관유형", "demand_org_type", "text"], ["사업명", "business_name", "text"], ["계약번호", "contract_no", "text"], ["계약종류", "contract_type", "text"], ["납품업체명", "vendor", "text"], ["납품업체구분", "vendor_type", "text"], ["납품업체소재지", "vendor_address", "text"], ["담당조달청", "procurement_office", "text"], ["물품분류코드", "class_code", "text"], ["물품분류명", "class_name", "text"], ["물품식별번호", "item_id", "text"], ["물품식별명", "item_name", "text"], ["납품기한일자", "due_date", "date"], ["계약단가", "unit_price", "int"], ["단위", "unit", "text"], ["납품수량", "quantity", "num"], ["납품금액", "amount", "int"], ["납품요구총금액", "total_amount", "int"], ["조회일자", "collected_on", "date"]];
+const won = v => v == null || v === "" ? "-" : `${Number(v).toLocaleString()}원`;
+function DeliveryEditor({
+  row,
+  onClose,
+  onSaved
+}) {
+  const [form, setForm] = React.useState(() => Object.fromEntries(DLVR_EDIT_FIELDS.map(([, col]) => [col, row[col] ?? ""])));
+  const [busy, setBusy] = React.useState(false);
+  const [history, setHistory] = React.useState([]);
+  React.useEffect(() => {
+    sb.from("delivery_changes").select("before, after, changed_by, changed_at").eq("delivery_id", row.id).order("changed_at", {
+      ascending: false
+    }).limit(10).then(({
+      data
+    }) => setHistory(data || []));
+  }, [row.id]);
+  const toValue = (type, v) => {
+    const t = String(v ?? "").trim();
+    if (t === "") return null;
+    if (type === "int") return Math.round(Number(t.replace(/,/g, "")));
+    if (type === "num") return Number(t.replace(/,/g, ""));
+    return t;
+  };
+  const save = async () => {
+    const patch = {};
+    for (const [label, col, type] of DLVR_EDIT_FIELDS) {
+      const v = toValue(type, form[col]);
+      if ((type === "int" || type === "num") && v !== null && !Number.isFinite(v)) {
+        window.alert(`${label}은(는) 숫자로 입력해 주세요.`);
+        return;
+      }
+      if (String(v ?? "") !== String(row[col] ?? "")) patch[col] = v;
+    }
+    if (!Object.keys(patch).length) {
+      onClose();
+      return;
+    }
+    setBusy(true);
+    const {
+      error
+    } = await sb.from("deliveries").update(patch).eq("id", row.id);
+    setBusy(false);
+    if (error) {
+      window.alert(`저장하지 못했습니다.\n${error.code === "23505" ? "같은 납품요구번호·물품식별번호·변경차수가 이미 있어요." : error.message}`);
+      return;
+    }
+    onSaved();
+  };
+  const input = (col, type) => ({
+    value: form[col] ?? "",
+    onChange: e => setForm(f => ({
+      ...f,
+      [col]: e.target.value
+    })),
+    type: type === "date" ? "date" : "text",
+    inputMode: type === "int" || type === "num" ? "decimal" : undefined,
+    style: {
+      width: "100%",
+      padding: "7px 10px",
+      borderRadius: 6,
+      border: "1px solid var(--border-button)",
+      font: "500 14px var(--font-body)",
+      background: "var(--surface-card)",
+      color: "var(--text-primary)"
+    }
+  });
+  return /*#__PURE__*/React.createElement(DetailModal, {
+    title: `납품요구 수정 · ${row.dlvr_req_no}-${row.change_ord}`,
+    onClose: onClose
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      font: "500 13px var(--font-body)",
+      color: "var(--text-tertiary)",
+      marginBottom: 14
+    }
+  }, "\uACE0\uCE5C \uB0B4\uC6A9\uC740 \uBC14\uB85C \uC800\uC7A5\uB3FC \uC870\uB2EC\uD1B5\uACC4\uC640 \uBCF4\uACE0 \uBA54\uC77C \uC9D1\uACC4\uC5D0 \uBC18\uC601\uB418\uACE0, \uB204\uAC00 \uBB34\uC5C7\uC744 \uBC14\uAFE8\uB294\uC9C0 \uC774\uB825\uC774 \uB0A8\uC544\uC694."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+      gap: "12px 16px"
+    }
+  }, DLVR_EDIT_FIELDS.map(([label, col, type]) => /*#__PURE__*/React.createElement("label", {
+    key: col,
+    style: {
+      display: "block"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      font: "600 13px var(--font-body)",
+      color: "var(--text-secondary)",
+      marginBottom: 4
+    }
+  }, label), /*#__PURE__*/React.createElement("input", input(col, type))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "flex-end",
+      gap: 8,
+      marginTop: 18
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: actionButton("default")
+  }, "\uCDE8\uC18C"), /*#__PURE__*/React.createElement("button", {
+    onClick: save,
+    disabled: busy,
+    style: actionButton("primary", busy)
+  }, busy ? "저장 중…" : "저장")), history.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 20,
+      borderTop: "1px solid var(--border-subtle)",
+      paddingTop: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      font: "700 14px var(--font-body)",
+      color: "var(--text-primary)",
+      marginBottom: 6
+    }
+  }, "\uBCC0\uACBD \uC774\uB825"), history.map((h, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      font: "500 13px var(--font-body)",
+      color: "var(--text-secondary)",
+      lineHeight: 1.6
+    }
+  }, kstText(h.changed_at), " \xB7 ", String(h.changed_by).replace(STAFF_DOMAIN, ""), " \xB7", " ", Object.keys(h.after || {}).map(k => {
+    const label = (DLVR_EDIT_FIELDS.find(([, col]) => col === k) || [k])[0];
+    return `${label}: ${h.before?.[k] ?? "-"} → ${h.after[k] ?? "-"}`;
+  }).join(", ")))));
+}
+function DeliveryManagerPage({
+  onChanged
+}) {
+  const [rows, setRows] = React.useState(null);
+  const [tab, setTab] = React.useState("ALL");
+  const [q, setQ] = React.useState("");
+  const [limit, setLimit] = React.useState(100);
+  const [editing, setEditing] = React.useState(null);
+  const load = React.useCallback(() => {
+    fetchAll(() => sb.from("v_product_deliveries").select(DLVR_SELECT).order("dlvr_req_date", {
+      ascending: false
+    }).order("id")).then(setRows).catch(e => window.alert(`불러오지 못했습니다.\n${e.message || e}`));
+  }, []);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  const needle = q.trim().toLowerCase();
+  const filtered = (rows || []).filter(r => (tab === "ALL" || r.product === tab) && (!needle || ["demand_org", "vendor", "item_id", "item_name", "business_name", "dlvr_req_no", "contract_no"].some(c => String(r[c] || "").toLowerCase().includes(needle))));
+  const chip = on => ({
+    all: "unset",
+    cursor: "pointer",
+    padding: "7px 16px",
+    borderRadius: 999,
+    font: "600 14px var(--font-body)",
+    background: on ? "var(--accent-primary-strong)" : "var(--surface-card)",
+    border: `1px solid ${on ? "transparent" : "var(--border-button)"}`,
+    color: on ? "var(--text-primary)" : "var(--text-secondary)"
+  });
+  const cols = [["납품요구일자", 110], ["제품", 84], ["수요기관", 170], ["납품업체", 150], ["물품식별번호", 108], ["물품식별명"], ["수량", 70], ["계약단가", 120], ["납품금액", 130], ["", 64]];
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      flexWrap: "wrap"
+    }
+  }, ["ALL", ...PRODUCT_TABS].map(t => /*#__PURE__*/React.createElement("button", {
+    key: t,
+    onClick: () => {
+      setTab(t);
+      setLimit(100);
+    },
+    style: chip(tab === t)
+  }, PRODUCT_LABEL[t], " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      opacity: 0.7,
+      marginLeft: 2
+    }
+  }, (rows || []).filter(r => t === "ALL" || r.product === t).length))), /*#__PURE__*/React.createElement("input", {
+    value: q,
+    onChange: e => {
+      setQ(e.target.value);
+      setLimit(100);
+    },
+    placeholder: "\uC218\uC694\uAE30\uAD00\xB7\uC5C5\uCCB4\xB7\uBB3C\uD488\uC2DD\uBCC4\uBC88\uD638\xB7\uC0AC\uC5C5\uBA85 \uAC80\uC0C9",
+    style: {
+      marginLeft: "auto",
+      width: 300,
+      padding: "8px 12px",
+      borderRadius: 8,
+      border: "1px solid var(--border-button)",
+      font: "500 14px var(--font-body)",
+      background: "var(--surface-card)"
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      font: "500 13px var(--font-body)",
+      color: "var(--text-tertiary)"
+    }
+  }, "\uB4F1\uB85D \uBB3C\uD488\uC758 \uB0A9\uD488\uC694\uAD6C ", filtered.length.toLocaleString(), "\uAC74 \xB7 \uC904\uC744 \uB204\uB974\uBA74 \uBAA8\uB4E0 \uCE78\uC744 \uACE0\uCE60 \uC218 \uC788\uC5B4\uC694 (\uC870\uB2EC\uD1B5\uACC4\xB7\uBA54\uC77C \uC9D1\uACC4\uC5D0 \uBC14\uB85C \uBC18\uC601)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "var(--surface-card)",
+      border: "1px solid var(--border-default)",
+      borderRadius: "var(--radius-xl)",
+      overflow: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "jd-hover jd-rowlink",
+    style: {
+      width: "100%",
+      minWidth: 1100,
+      borderCollapse: "collapse",
+      tableLayout: "fixed"
+    }
+  }, /*#__PURE__*/React.createElement("colgroup", null, cols.map(([c, w], i) => /*#__PURE__*/React.createElement("col", {
+    key: i,
+    style: w ? {
+      width: w
+    } : undefined
+  }))), /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, cols.map(([c], i) => /*#__PURE__*/React.createElement("th", {
+    key: i,
+    style: ITEM_TH
+  }, c)))), /*#__PURE__*/React.createElement("tbody", null, rows === null ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: cols.length,
+    style: {
+      ...ITEM_TD,
+      textAlign: "center",
+      color: "var(--text-tertiary)",
+      padding: 28
+    }
+  }, "\uBD88\uB7EC\uC624\uB294 \uC911\u2026")) : filtered.slice(0, limit).map(r => /*#__PURE__*/React.createElement("tr", {
+    key: `${r.id}-${r.product}`,
+    onClick: () => setEditing(r),
+    title: "\uB20C\uB7EC\uC11C \uC218\uC815"
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      color: "var(--text-secondary)",
+      fontVariantNumeric: "tabular-nums"
+    }
+  }, r.dlvr_req_date || "-"), /*#__PURE__*/React.createElement("td", {
+    style: ITEM_TD
+  }, /*#__PURE__*/React.createElement(ProductCell, {
+    product: r.product
+  })), /*#__PURE__*/React.createElement("td", {
+    style: ITEM_TD,
+    title: r.demand_org
+  }, r.demand_org || "-"), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      ...(String(r.vendor || "").includes(OUR_COMPANY_MARK) ? {
+        color: OUR_COLOR,
+        fontWeight: 700
+      } : {})
+    },
+    title: r.vendor
+  }, shortName(r.vendor) || "-"), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      fontVariantNumeric: "tabular-nums"
+    }
+  }, r.item_id), /*#__PURE__*/React.createElement("td", {
+    style: ITEM_TD_FULL
+  }, r.item_name || "-"), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      textAlign: "right",
+      fontVariantNumeric: "tabular-nums"
+    }
+  }, r.quantity ?? "-"), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      textAlign: "right",
+      fontVariantNumeric: "tabular-nums"
+    }
+  }, won(r.unit_price)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      textAlign: "right",
+      fontVariantNumeric: "tabular-nums",
+      fontWeight: 600
+    }
+  }, won(r.amount)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...ITEM_TD,
+      textAlign: "center",
+      padding: 4
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: e => {
+      e.stopPropagation();
+      setEditing(r);
+    },
+    title: "\uC218\uC815",
+    style: {
+      all: "unset",
+      cursor: "pointer",
+      display: "inline-flex",
+      width: 30,
+      height: 30,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: "var(--radius-md)",
+      color: "var(--text-secondary)"
+    }
+  }, /*#__PURE__*/React.createElement(PencilIcon, null)))))))), rows && filtered.length > limit && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setLimit(n => n + 200),
+    style: {
+      ...actionButton("default"),
+      alignSelf: "center"
+    }
+  }, "\uB354 \uBCF4\uAE30 (", (filtered.length - limit).toLocaleString(), "\uAC74 \uB0A8\uC74C)"), editing && /*#__PURE__*/React.createElement(DeliveryEditor, {
+    row: editing,
+    onClose: () => setEditing(null),
+    onSaved: () => {
+      setEditing(null);
+      load();
+      onChanged && onChanged();
+    }
+  }));
+}
 function BidKeywordPage() {
   const [lastChecked, setLastChecked] = React.useState(null);
   React.useEffect(() => {
@@ -6683,7 +7022,7 @@ function App() {
     let cancelled = false;
     setLoading(true);
     setError("");
-    Promise.all([loadItemRecords(), fetchAll(() => sb.from("v_product_deliveries").select("*").order("id")), fetchAll(() => sb.from("bid_notices").select("*").order("posted_at", {
+    Promise.all([loadItemRecords(), fetchAll(() => sb.from("v_product_deliveries").select(DLVR_SELECT).order("id")), fetchAll(() => sb.from("bid_notices").select("*").order("posted_at", {
       ascending: false
     }))]).then(([items, deliveries, bids]) => {
       if (cancelled) return;
@@ -7040,7 +7379,9 @@ function App() {
     priceById: priceById
   }) : active === "bid-notices" ? /*#__PURE__*/React.createElement(BidNoticePage, {
     bids: rawBids
-  }) : active === "bid-keywords" ? /*#__PURE__*/React.createElement(BidKeywordPage, null) : active === "item-id-by-vendor" ? /*#__PURE__*/React.createElement(VendorItemTable, {
+  }) : active === "bid-keywords" ? /*#__PURE__*/React.createElement(BidKeywordPage, null) : active === "delivery-manage" ? /*#__PURE__*/React.createElement(DeliveryManagerPage, {
+    onChanged: () => setReloadKey(k => k + 1)
+  }) : active === "item-id-by-vendor" ? /*#__PURE__*/React.createElement(VendorItemTable, {
     deliveryByProduct: deliveryByProduct,
     itemsByProduct: itemsByProduct
   }) : active === "jodal-stats" ? /*#__PURE__*/React.createElement(CompetitorComparePanel, {
