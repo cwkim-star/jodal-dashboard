@@ -447,29 +447,29 @@ const NAV_COLLAPSED_KEY = "jodal3_nav_collapsed";
 // 조회 메뉴와 관리 메뉴는 같은 대상끼리 이름을 맞춘다 ("○○ 현황" ↔ "○○ 관리"), 순서도 같게
 const MENU = [{
   id: "jodal-stats",
-  label: "조달통계 현황",
+  label: "조달 실적 현황",
   depth: 1
 }, {
   id: "item-list",
-  label: "물품식별번호 현황",
+  label: "등록 품목",
   depth: 1
 }, {
   id: "bid-notices",
-  label: "입찰공고 현황",
+  label: "입찰 공고",
   depth: 1
 }, {
   id: "delivery-manage",
-  label: "조달통계 실적관리",
+  label: "조달 실적 현황 관리",
   depth: 1,
   group: "admin"
 }, {
   id: "item-id-manage",
-  label: "물품식별번호 관리",
+  label: "등록 품목 관리",
   depth: 1,
   group: "admin"
 }, {
   id: "bid-keywords",
-  label: "입찰공고 키워드관리",
+  label: "입찰 공고 키워드 관리",
   depth: 1,
   group: "admin"
 }];
@@ -1710,6 +1710,107 @@ function YearlyTrendChart({
 }
 
 // 제조사 x 연도 점유율(%) 매트릭스 + 전체기간 합계 점유율
+// 연도별 매출액 비교 — 제조사별 연도 매출 (전체 데이터 기준)
+function YearlyAmountMatrix({
+  series,
+  months,
+  limit
+}) {
+  const years = React.useMemo(() => Array.from(new Set(months.map(m => m.slice(0, 4)))).sort(), [months]);
+  const rows = series.map(s => {
+    const byYear = Object.fromEntries(years.map(y => [y, months.filter(m => m.startsWith(y)).reduce((sum, m) => sum + (s.monthly.get(m)?.amount || 0), 0)]));
+    return {
+      name: s.name,
+      byYear,
+      total: years.reduce((sum, y) => sum + byYear[y], 0)
+    };
+  }).filter(r => r.total > 0 || r.name.includes(OUR_COMPANY_MARK)).sort((a, b) => b.total - a.total);
+  const shownRows = summarizeRows(rows, limit, rest => ({
+    name: `기타 ${rest.length}개사`,
+    byYear: Object.fromEntries(years.map(y => [y, rest.reduce((sum, r) => sum + r.byYear[y], 0)])),
+    total: rest.reduce((sum, r) => sum + r.total, 0),
+    isEtc: true
+  }));
+  const yearTotal = Object.fromEntries(years.map(y => [y, rows.reduce((sum, r) => sum + r.byYear[y], 0)]));
+  const grand = rows.reduce((sum, r) => sum + r.total, 0);
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: "1 1 380px",
+      minWidth: 320
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      borderCollapse: "collapse",
+      width: "100%",
+      tableLayout: "fixed"
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+    style: {
+      ...DASH_TH,
+      textAlign: "left"
+    }
+  }, "\uC81C\uC870\uC0AC"), years.map(y => /*#__PURE__*/React.createElement("th", {
+    key: y,
+    style: {
+      ...DASH_TH,
+      textAlign: "right"
+    }
+  }, y)), /*#__PURE__*/React.createElement("th", {
+    style: {
+      ...DASH_TH,
+      textAlign: "right"
+    }
+  }, "\uD569\uACC4"))), /*#__PURE__*/React.createElement("tbody", null, rows.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: years.length + 2,
+    style: {
+      padding: "10px 8px",
+      font: "var(--text-body-sm)",
+      color: "var(--text-tertiary)",
+      textAlign: "center"
+    }
+  }, "\uC2E4\uC801 \uC5C6\uC74C")) : shownRows.map(r => {
+    const isOurs = r.name.includes(OUR_COMPANY_MARK);
+    return /*#__PURE__*/React.createElement("tr", {
+      key: r.name,
+      style: {
+        background: isOurs ? OUR_TINT : "transparent"
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...DASH_TD_NAME,
+        font: dashNameFont(isOurs)
+      },
+      title: r.name
+    }, shortName(r.name)), years.map(y => /*#__PURE__*/React.createElement("td", {
+      key: y,
+      style: DASH_TD_NUM
+    }, r.byYear[y] > 0 ? formatEokMan(r.byYear[y]) : "-")), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...DASH_TD_NUM,
+        font: "700 14px var(--font-body)"
+      }
+    }, formatEokMan(r.total)));
+  }), rows.length > 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...DASH_TD_NAME,
+      ...DASH_TOTAL_BORDER,
+      font: dashNameFont(true)
+    }
+  }, "\uD569\uACC4"), years.map(y => /*#__PURE__*/React.createElement("td", {
+    key: y,
+    style: {
+      ...DASH_TD_NUM,
+      ...DASH_TOTAL_BORDER,
+      font: "700 14px var(--font-body)"
+    }
+  }, formatEokMan(yearTotal[y]))), /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...DASH_TD_NUM,
+      ...DASH_TOTAL_BORDER,
+      font: "700 14px var(--font-body)"
+    }
+  }, formatEokMan(grand))))));
+}
 function YearlyShareMatrix({
   series,
   months,
@@ -2739,12 +2840,7 @@ function MonthlyPerformanceReport({
   }, monthOptions.map(m => /*#__PURE__*/React.createElement("option", {
     key: m,
     value: m
-  }, `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월`))), /*#__PURE__*/React.createElement("span", {
-    style: {
-      font: "500 13px var(--font-body)",
-      color: "var(--text-tertiary)"
-    }
-  }, "(\uB2E8\uC704: \uBC31\uB9CC\uC6D0)"), /*#__PURE__*/React.createElement("button", {
+  }, `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월`))), /*#__PURE__*/React.createElement("button", {
     onClick: () => setShowMfrTable(true),
     style: {
       all: "unset",
@@ -3064,6 +3160,10 @@ function CompetitorLineChart({
     return map;
   }, [rows]);
 
+  // 상세 분석은 조회 기간과 상관없이 전체 데이터로 (데이터가 있는 모든 달)
+  const allMonths = React.useMemo(() => Array.from(volumes.keys()).sort(), [volumes]);
+  const allSeries = React.useMemo(() => buildMonthlySeries(rows, mfrMap, allMonths), [rows, mfrMap, allMonths]);
+
   // 기간이 바뀌면 열려 있던 계약 목록(특정 월)은 기간 밖일 수 있으므로 닫는다
   React.useEffect(() => {
     setSelected(null);
@@ -3267,29 +3367,21 @@ function CompetitorLineChart({
       textAlign: "right",
       fontVariantNumeric: "tabular-nums"
     }
-  }, parseAmount(r["납품금액"]).toLocaleString(), "\uC6D0"))))))))), /*#__PURE__*/React.createElement(SectionLabel, null, "\uC0C1\uC138 \uBD84\uC11D"), (() => {
+  }, parseAmount(r["납품금액"]).toLocaleString(), "\uC6D0"))))))))), /*#__PURE__*/React.createElement(SectionLabel, null, "\uC0C1\uC138 \uBD84\uC11D \xB7 \uC804\uCCB4 \uAE30\uAC04 (\uC870\uD68C \uAE30\uAC04\uACFC \uBB34\uAD00)"), (() => {
     const detailPanels = [{
-      key: "month",
-      title: lastMonthTitle,
-      render: limit => /*#__PURE__*/React.createElement(PeriodTable, {
-        title: null,
-        rows: thisMonthStat.rows,
-        limit: limit
-      })
-    }, {
-      key: "cum",
-      title: "조회 기간 누적",
-      render: limit => /*#__PURE__*/React.createElement(PeriodTable, {
-        title: null,
-        rows: thisYearStat.rows,
+      key: "yearAmount",
+      title: "연도별 매출액 비교",
+      render: limit => /*#__PURE__*/React.createElement(YearlyAmountMatrix, {
+        series: allSeries,
+        months: allMonths,
         limit: limit
       })
     }, {
       key: "yearly",
       title: "연도별 점유율 현황",
       render: limit => /*#__PURE__*/React.createElement(YearlyShareMatrix, {
-        series: series,
-        months: months,
+        series: allSeries,
+        months: allMonths,
         limit: limit
       })
     }];
