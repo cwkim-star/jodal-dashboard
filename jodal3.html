@@ -333,6 +333,10 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
   }
   .jd-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:stretch}
   .jd-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  /* 표에서 마우스를 올린 줄 강조 (오른쪽에 고정된 버튼 칸까지 같이) */
+  .jd-hover tbody tr:hover > td{background-color:#eef2fb !important}
+  .jd-hover tbody tr{transition:background-color .1s}
+  .jd-rowlink tbody tr{cursor:pointer}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
@@ -4346,8 +4350,34 @@ function itemKey(r) {
 const ITEM_EDIT_FIELDS = ["제품명", "세부분류", "제조사명", "물품식별번호", "품목"];
 
 // 표에 보이는 품목을 엑셀에서 열 수 있는 CSV(UTF-8 BOM)로 내려받는다
-function downloadItemsCsv(rows) {
-  const cols = ["등록일자", "제품명", "세부분류", "제조사명", "물품식별번호", "품목"];
+// 물품식별번호 → 계약단가 (납품요구에 적힌 물품 한 개당 계약 가격 — 수량이 곱해진 납품금액과 다른 "정해진 가격").
+// 같은 물품은 보통 단가가 하나이고, 바뀐 적이 있으면 가장 최근 납품요구 기준. 납품 이력이 없으면 알 수 없다.
+function unitPriceById(deliveryByProduct) {
+  const out = new Map();
+  for (const rows of Object.values(deliveryByProduct || {})) {
+    for (const r of rows) {
+      const id = String(r["물품식별번호"] || "").trim();
+      const price = parseAmount(r["계약단가"]);
+      const ymd = String(r["납품요구일자"] || "");
+      if (!id || !price) continue;
+      const prev = out.get(id);
+      if (!prev || ymd > prev.ymd) out.set(id, {
+        price,
+        ymd
+      });
+    }
+  }
+  return out;
+}
+function priceText(p) {
+  return p ? `${p.price.toLocaleString()}원` : "-";
+}
+function downloadItemsCsv(rows, priceById) {
+  const cols = ["등록일자", "제품명", "세부분류", "제조사명", "물품식별번호", "품목", "계약단가"];
+  rows = rows.map(r => ({
+    ...r,
+    "계약단가": priceById?.get(String(r["물품식별번호"] || "").trim())?.price ?? ""
+  }));
   const esc = v => {
     const t = String(v ?? "");
     return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
@@ -4635,6 +4665,7 @@ function TrashPanel({
       borderRadius: 8
     }
   }, /*#__PURE__*/React.createElement("table", {
+    className: "jd-hover",
     style: {
       borderCollapse: "collapse",
       width: "max-content",
@@ -4791,7 +4822,8 @@ function ItemManager({
   onEdit,
   trash = [],
   onRestore,
-  readOnly = false
+  readOnly = false,
+  priceById
 }) {
   const items = React.useMemo(() => sortByDateDesc(rawRows), [rawRows]);
   const pending = React.useMemo(() => sortByDateDesc(rawPending), [rawPending]);
@@ -5154,6 +5186,7 @@ function ItemManager({
     key: d,
     value: d
   })))), /*#__PURE__*/React.createElement("table", {
+    className: "jd-hover",
     style: {
       borderCollapse: "collapse",
       width: "100%",
@@ -5367,7 +5400,7 @@ function ItemManager({
   }, "\uD544\uD130 \uCD08\uAE30\uD654"), /*#__PURE__*/React.createElement("button", {
     style: actionButton("default", !filtered.length),
     disabled: !filtered.length,
-    onClick: () => downloadItemsCsv(filtered),
+    onClick: () => downloadItemsCsv(filtered, priceById),
     title: "\uC9C0\uAE08 \uD45C\uC5D0 \uBCF4\uC774\uB294 \uD488\uBAA9(\uD544\uD130 \uC801\uC6A9)\uC744 \uC5D1\uC140 \uD30C\uC77C\uB85C \uC800\uC7A5"
   }, "\uC5D1\uC140 \uB2E4\uC6B4\uB85C\uB4DC"), !readOnly && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
     style: actionButton(showTrash ? "primary" : "default"),
@@ -5542,6 +5575,7 @@ function ItemManager({
       overflow: "auto"
     }
   }, /*#__PURE__*/React.createElement("table", {
+    className: "jd-hover",
     style: {
       borderCollapse: "collapse",
       width: "100%",
@@ -5557,7 +5591,11 @@ function ItemManager({
     style: c.width ? {
       width: c.width
     } : undefined
-  })), !readOnly && /*#__PURE__*/React.createElement("col", {
+  })), /*#__PURE__*/React.createElement("col", {
+    style: {
+      width: 124
+    }
+  }), !readOnly && /*#__PURE__*/React.createElement("col", {
     style: {
       width: 124
     }
@@ -5582,7 +5620,10 @@ function ItemManager({
   })), ITEM_FILTER_COLUMNS.map(c => /*#__PURE__*/React.createElement("th", {
     key: c.key,
     style: ITEM_TH
-  }, c.key)), !readOnly && /*#__PURE__*/React.createElement("th", {
+  }, c.key)), /*#__PURE__*/React.createElement("th", {
+    style: ITEM_TH,
+    title: "\uBB3C\uD488 \uD55C \uAC1C\uB2F9 \uACC4\uC57D \uAC00\uACA9 (\uAC00\uC7A5 \uCD5C\uADFC \uB0A9\uD488\uC694\uAD6C \uAE30\uC900). \uB0A9\uD488 \uC774\uB825\uC774 \uC5C6\uC73C\uBA74 '-'"
+  }, "\uACC4\uC57D\uB2E8\uAC00"), !readOnly && /*#__PURE__*/React.createElement("th", {
     style: {
       ...ITEM_TH,
       ...STICKY_RIGHT,
@@ -5602,14 +5643,16 @@ function ItemManager({
       ...prev,
       [c.key]: v
     }))
-  }))), !readOnly && /*#__PURE__*/React.createElement("td", {
+  }))), /*#__PURE__*/React.createElement("td", {
+    style: FILTER_TD
+  }), !readOnly && /*#__PURE__*/React.createElement("td", {
     style: {
       ...FILTER_TD,
       ...STICKY_RIGHT,
       zIndex: 2
     }
   }))), /*#__PURE__*/React.createElement("tbody", null, filtered.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: ITEM_FILTER_COLUMNS.length + (readOnly ? 0 : 2),
+    colSpan: ITEM_FILTER_COLUMNS.length + (readOnly ? 1 : 3),
     style: {
       padding: "28px 12px",
       font: "var(--text-body-sm)",
@@ -5700,7 +5743,18 @@ function ItemManager({
       }
     }, r["물품식별번호"]), /*#__PURE__*/React.createElement("td", {
       style: ITEM_TD_FULL
-    }, r["품목"] || "-")), !readOnly && /*#__PURE__*/React.createElement("td", {
+    }, r["품목"] || "-")), (() => {
+      const pr = priceById?.get(String(r["물품식별번호"] || "").trim());
+      return /*#__PURE__*/React.createElement("td", {
+        style: {
+          ...ITEM_TD,
+          textAlign: "right",
+          fontVariantNumeric: "tabular-nums",
+          color: pr ? "var(--text-primary)" : "var(--text-tertiary)"
+        },
+        title: pr ? `${pr.ymd.slice(0, 4)}-${pr.ymd.slice(4, 6)}-${pr.ymd.slice(6, 8)} 납품요구 기준` : "납품 이력이 없어 계약단가를 알 수 없음"
+      }, priceText(pr));
+    })(), !readOnly && /*#__PURE__*/React.createElement("td", {
       style: {
         ...ITEM_TD,
         ...STICKY_RIGHT,
@@ -6195,6 +6249,7 @@ function BidNoticePage({
       overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("table", {
+    className: "jd-hover jd-rowlink",
     style: {
       width: "100%",
       borderCollapse: "collapse",
@@ -6223,6 +6278,10 @@ function BidNoticePage({
       key: r["공고번호"],
       style: {
         opacity: st.open ? 1 : 0.6
+      },
+      title: "\uB20C\uB7EC\uC11C \uB098\uB77C\uC7A5\uD130 \uACF5\uACE0 \uBCF4\uAE30",
+      onClick: () => {
+        if (r["상세URL"] && !window.getSelection()?.toString()) window.open(r["상세URL"], "_blank", "noopener");
       }
     }, /*#__PURE__*/React.createElement("td", {
       style: {
@@ -6257,6 +6316,7 @@ function BidNoticePage({
       href: r["상세URL"],
       target: "_blank",
       rel: "noopener noreferrer",
+      onClick: e => e.stopPropagation(),
       style: {
         color: "var(--text-primary)",
         font: "600 14px var(--font-body)",
@@ -6745,6 +6805,7 @@ function App() {
     }).in("id", ids).eq("product", "기타"), "되살리기");
   };
   const signOut = () => sb.auth.signOut();
+  const priceById = React.useMemo(() => unitPriceById(deliveryByProduct), [deliveryByProduct]);
   const sortedItemsByProduct = React.useMemo(() => Object.fromEntries(PRODUCT_TABS.map(t => [t, prepareItemRecords(itemsByProduct[t] || [], deliveryByProduct[t] || [])])), [itemsByProduct, deliveryByProduct]);
   const toggle = id => setExpanded(prev => ({
     ...prev,
@@ -6940,20 +7001,7 @@ function App() {
         color: "var(--text-primary)"
       }
     }, title));
-  })()), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setReloadKey(k => k + 1),
-    disabled: loading,
-    style: {
-      all: "unset",
-      cursor: loading ? "default" : "pointer",
-      padding: "8px 16px",
-      borderRadius: "var(--radius-md)",
-      border: "1px solid var(--border-button)",
-      font: "500 15px var(--font-body)",
-      color: "var(--text-secondary)",
-      opacity: loading ? 0.6 : 1
-    }
-  }, loading ? "불러오는 중…" : "새로고침")), error ? /*#__PURE__*/React.createElement("div", {
+  })())), error ? /*#__PURE__*/React.createElement("div", {
     style: {
       background: "var(--surface-card)",
       border: "1px solid var(--accent-red)",
@@ -6982,12 +7030,14 @@ function App() {
     onExclude: keys => decide(keys, "exclude"),
     onAdd: addItem,
     onEdit: editItems,
+    priceById: priceById,
     trash: trashItems,
     onRestore: restoreItems
   }) : active === "item-list" ? /*#__PURE__*/React.createElement(ItemManager, {
     readOnly: true,
     items: PRODUCT_TABS.flatMap(t => sortedItemsByProduct[t]),
-    pending: []
+    pending: [],
+    priceById: priceById
   }) : active === "bid-notices" ? /*#__PURE__*/React.createElement(BidNoticePage, {
     bids: rawBids
   }) : active === "bid-keywords" ? /*#__PURE__*/React.createElement(BidKeywordPage, null) : active === "item-id-by-vendor" ? /*#__PURE__*/React.createElement(VendorItemTable, {
