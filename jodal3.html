@@ -605,6 +605,9 @@ function bidToRecord(b) {
     "관련 제품": (b.products || []).join(", "),
     "공고명": b.title,
     "키워드": (b.keywords || []).join(", "),
+    "적합도": b.fit_grade || "",
+    "적합도점수": b.fit_score ?? "",
+    "적합도근거": b.fit_reasons || [],
     "업무구분": b.business_type || "",
     "공고기관": b.order_org || "",
     "수요기관": b.demand_org || "",
@@ -5720,23 +5723,46 @@ function ItemManager({
 // ── 입찰공고 관리 ──────────────────────────────────────────────
 // 나라장터 입찰공고목록에서 제품 키워드(공고명)로 걸린 공고를 백엔드(jodal bids)가 "입찰공고" 시트 탭에 모으고,
 // 여기서는 그 탭을 제품별로 보여준다. 마감까지 남은 날을 함께 표시해 진행 중인 공고를 먼저 볼 수 있게 한다.
+// 적합도: 수집기가 공고명·업무구분·예산·마감·수요기관 납품 이력으로 계산 (src/jodal/db.py bid_fit)
+const FIT_STYLE = {
+  "상": {
+    background: "rgba(30,58,138,0.12)",
+    color: "#1e3a8a"
+  },
+  "중": {
+    background: "#fef3c7",
+    color: "#92400e"
+  },
+  "하": {
+    background: "var(--surface-muted)",
+    color: "var(--text-tertiary)"
+  }
+};
+const FIT_ORDER = {
+  "상": 0,
+  "중": 1,
+  "하": 2
+};
 const BID_COLUMNS = [{
+  key: "적합도",
+  width: 84
+}, {
   key: "관련 제품",
   width: 110
 }, {
   key: "공고명"
 }, {
   key: "수요기관",
-  width: 220
-}, {
-  key: "공고일",
-  width: 120
-}, {
-  key: "입찰마감",
   width: 170
 }, {
+  key: "공고일",
+  width: 110
+}, {
+  key: "입찰마감",
+  width: 160
+}, {
   key: "배정예산",
-  width: 130
+  width: 120
 }];
 function parseBidDt(v) {
   const m = String(v || "").match(/(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/);
@@ -6025,6 +6051,8 @@ function BidNoticePage({
 }) {
   const [tab, setTab] = React.useState("ALL");
   const [onlyOpen, setOnlyOpen] = React.useState(true);
+  const [byFit, setByFit] = React.useState(false); // 적합도순 정렬
+  const [onlyTop, setOnlyTop] = React.useState(false); // 적합도 상만
   const [lastChecked, setLastChecked] = React.useState(null);
   React.useEffect(() => {
     sb.from("app_state").select("value").eq("key", "bids").maybeSingle().then(({
@@ -6038,9 +6066,10 @@ function BidNoticePage({
     __products: String(r["관련 제품"] || "").split(",").map(x => x.trim()).filter(Boolean),
     __status: bidStatus(r, now)
   })).sort((a, b) => String(b["공고일시"]).localeCompare(String(a["공고일시"]))), [bids]);
-  const base = onlyOpen ? rows.filter(r => r.__status.open) : rows;
+  const base = rows.filter(r => (!onlyOpen || r.__status.open) && (!onlyTop || r["적합도"] === "상"));
   const countOf = t => t === "ALL" ? base.length : base.filter(r => r.__products.includes(t)).length;
-  const shown = tab === "ALL" ? base : base.filter(r => r.__products.includes(tab));
+  const picked = tab === "ALL" ? base : base.filter(r => r.__products.includes(tab));
+  const shown = byFit ? [...picked].sort((a, b) => (Number(b["적합도점수"]) || 0) - (Number(a["적합도점수"]) || 0) || String(b["공고일시"]).localeCompare(String(a["공고일시"]))) : picked;
   const lastCollected = bids.map(r => String(r["수집일시"] || "")).sort().pop();
   const chip = activeChip => ({
     all: "unset",
@@ -6089,6 +6118,21 @@ function BidNoticePage({
     style: chip(!onlyOpen)
   }, "\uB9C8\uAC10 \uD3EC\uD568"), /*#__PURE__*/React.createElement("span", {
     style: {
+      width: 1,
+      height: 22,
+      background: "var(--border-default)",
+      margin: "0 4px"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setByFit(v => !v),
+    style: chip(byFit),
+    title: "\uC801\uD569\uB3C4 \uC810\uC218\uAC00 \uB192\uC740 \uACF5\uACE0\uBD80\uD130"
+  }, "\uC801\uD569\uB3C4\uC21C"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setOnlyTop(v => !v),
+    style: chip(onlyTop),
+    title: "\uC6B0\uB9AC \uC81C\uD488 \uC601\uC5C5\uC5D0 \uAC00\uC7A5 \uB9DE\uB294 \uACF5\uACE0\uB9CC"
+  }, "\uC801\uD569\uB3C4 \uC0C1\uB9CC"), /*#__PURE__*/React.createElement("span", {
+    style: {
       marginLeft: "auto",
       font: "500 13px var(--font-body)",
       color: "var(--text-tertiary)"
@@ -6134,6 +6178,21 @@ function BidNoticePage({
       style: {
         ...ITEM_TD,
         textAlign: "center"
+      },
+      title: r["적합도점수"] !== "" ? `적합도 점수 ${r["적합도점수"]} / 100` : ""
+    }, r["적합도"] ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...FIT_STYLE[r["적합도"]],
+        display: "inline-block",
+        minWidth: 28,
+        padding: "3px 10px",
+        borderRadius: 999,
+        font: "800 14px var(--font-body)"
+      }
+    }, r["적합도"]) : "-"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...ITEM_TD,
+        textAlign: "center"
       }
     }, r.__products.map(p => /*#__PURE__*/React.createElement("div", {
       key: p
@@ -6165,7 +6224,22 @@ function BidNoticePage({
       style: {
         color: OUR_COLOR
       }
-    }, " \xB7 \uD0A4\uC6CC\uB4DC: ", r["키워드"]))), /*#__PURE__*/React.createElement("td", {
+    }, " \xB7 \uD0A4\uC6CC\uB4DC: ", r["키워드"])), r["적합도근거"].length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        font: "500 13px var(--font-body)",
+        marginTop: 3,
+        lineHeight: 1.5
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: "var(--text-tertiary)"
+      }
+    }, "\uADFC\uAC70 "), r["적합도근거"].map((w, i) => /*#__PURE__*/React.createElement("span", {
+      key: i,
+      style: {
+        color: w.startsWith("＋") ? "#15803d" : w.startsWith("－") ? "#b91c1c" : "var(--text-tertiary)"
+      }
+    }, i > 0 ? " · " : "", w)))), /*#__PURE__*/React.createElement("td", {
       style: {
         ...ITEM_TD,
         whiteSpace: "normal"
