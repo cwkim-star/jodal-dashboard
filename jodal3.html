@@ -427,7 +427,8 @@ function SidebarToggleIcon({
 const NAV_COLLAPSED_KEY = "jodal3_nav_collapsed";
 
 // depth: 1 = 최상위, 2 = 하위(리프)
-// 회사 계정으로 로그인하면 누구나 모든 메뉴를 보고 쓸 수 있다 (관리자/이용자 구분 없음)
+// 메뉴는 "메뉴"(조회)와 "관리자"(관리) 두 묶음으로 나눠 보여준다.
+// 권한은 나누지 않는다 — 회사 계정으로 로그인하면 누구나 두 묶음 모두 보고 쓸 수 있다.
 const MENU = [{
   id: "jodal-stats",
   label: "조달통계",
@@ -443,11 +444,13 @@ const MENU = [{
 }, {
   id: "item-id-manage",
   label: "물품식별번호 관리",
-  depth: 1
+  depth: 1,
+  group: "admin"
 }, {
   id: "bid-keywords",
   label: "입찰 키워드 관리",
-  depth: 1
+  depth: 1,
+  group: "admin"
 }];
 
 // ── 데이터 기준일 ─────────────────────────────
@@ -6700,7 +6703,28 @@ function App() {
       letterSpacing: 0.4,
       textTransform: "uppercase"
     }
-  }, "\uBA54\uB274"), MENU.map(node => /*#__PURE__*/React.createElement(NavNode, {
+  }, "\uBA54\uB274"), MENU.filter(m => m.group !== "admin").map(node => /*#__PURE__*/React.createElement(NavNode, {
+    key: node.id,
+    node: node,
+    expanded: expanded,
+    onToggle: toggle,
+    active: active,
+    onSelect: setActive,
+    collapsed: navCollapsed
+  })), navCollapsed ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 1,
+      background: "var(--border-subtle)",
+      margin: "10px 8px"
+    }
+  }) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "18px 15px 8px",
+      font: "var(--text-caption)",
+      color: "var(--text-tertiary)",
+      letterSpacing: 0.4
+    }
+  }, "\uAD00\uB9AC\uC790"), MENU.filter(m => m.group === "admin").map(node => /*#__PURE__*/React.createElement(NavNode, {
     key: node.id,
     node: node,
     expanded: expanded,
