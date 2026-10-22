@@ -455,8 +455,10 @@ const MENU = [{
   id: "user-roles",
   label: "사용자 권한",
   depth: 1,
-  admin: true
-}];
+  admin: true,
+  viewerToo: true
+} // 이용자는 조회만
+];
 const ROLE_LABEL = {
   admin: "관리자",
   viewer: "이용자"
@@ -6030,7 +6032,8 @@ function BidKeywordPage() {
   });
 }
 function UserRolesPage({
-  me
+  me,
+  readOnly = false
 }) {
   const [rows, setRows] = React.useState(null);
   const [email, setEmail] = React.useState("");
@@ -6113,9 +6116,9 @@ function UserRolesPage({
     style: {
       color: "var(--text-primary)"
     }
-  }, "\uAD00\uB9AC\uC790"), ": \uBB3C\uD488\uC2DD\uBCC4\uBC88\uD638 \uAD00\uB9AC, \uC785\uCC30 \uD0A4\uC6CC\uB4DC \uAD00\uB9AC, \uC0AC\uC6A9\uC790 \uAD8C\uD55C\uC744 \uBC14\uAFC0 \uC218 \uC788\uC5B4\uC694. \uC544\uB798 \uBAA9\uB85D\uC5D0\uC11C \uAD00\uB9AC\uC790\uB85C \uC9C0\uC815\uD55C \uC0AC\uB78C\uB9CC \uD574\uB2F9\uB3FC\uC694."), /*#__PURE__*/React.createElement("div", {
+  }, "\uAD00\uB9AC\uC790"), ": \uBB3C\uD488\uC2DD\uBCC4\uBC88\uD638 \uAD00\uB9AC, \uC785\uCC30 \uD0A4\uC6CC\uB4DC \uAD00\uB9AC, \uC0AC\uC6A9\uC790 \uAD8C\uD55C\uC744 \uBC14\uAFC0 \uC218 \uC788\uC5B4\uC694. \uC544\uB798 \uBAA9\uB85D\uC5D0\uC11C \uAD00\uB9AC\uC790\uB85C \uC9C0\uC815\uD55C \uC0AC\uB78C\uB9CC \uD574\uB2F9\uB3FC\uC694.", readOnly && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "\uBB3C\uD488\xB7\uD0A4\uC6CC\uB4DC\uB97C \uBC14\uAFB8\uAC70\uB098 \uAD00\uB9AC\uC790 \uAD8C\uD55C\uC774 \uD544\uC694\uD558\uBA74 \uC544\uB798 \uAD00\uB9AC\uC790\uC5D0\uAC8C \uC694\uCCAD\uD574 \uC8FC\uC138\uC694.")), /*#__PURE__*/React.createElement("div", {
     style: card
-  }, /*#__PURE__*/React.createElement("div", {
+  }, !readOnly && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
@@ -6164,7 +6167,7 @@ function UserRolesPage({
       width: "100%",
       borderCollapse: "collapse"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["계정", "권한", "바꾼 사람", "바꾼 시각", ""].map((c, i) => /*#__PURE__*/React.createElement("th", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ["계정", "권한", "바꾼 사람", "바꾼 시각", ...(readOnly ? [] : [""])].map((c, i) => /*#__PURE__*/React.createElement("th", {
     key: i,
     style: ITEM_TH
   }, c)))), /*#__PURE__*/React.createElement("tbody", null, rows === null ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
@@ -6187,7 +6190,12 @@ function UserRolesPage({
       ...ITEM_TD,
       textAlign: "center"
     }
-  }, /*#__PURE__*/React.createElement("select", {
+  }, readOnly ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "700 13px var(--font-body)",
+      color: r.role === "admin" ? OUR_COLOR : "var(--text-secondary)"
+    }
+  }, ROLE_LABEL[r.role]) : /*#__PURE__*/React.createElement("select", {
     value: r.role,
     onChange: e => change(r, e.target.value),
     style: {
@@ -6213,7 +6221,7 @@ function UserRolesPage({
       color: "var(--text-secondary)",
       fontVariantNumeric: "tabular-nums"
     }
-  }, kstText(r.updated_at)), /*#__PURE__*/React.createElement("td", {
+  }, kstText(r.updated_at)), !readOnly && /*#__PURE__*/React.createElement("td", {
     style: {
       ...ITEM_TD,
       textAlign: "center"
@@ -6709,7 +6717,9 @@ function App() {
     }) => setRole(data?.role || "viewer"));
   }, [session?.user?.id, isStaff]);
   const isAdmin = role === "admin";
-  const menuFor = MENU.filter(m => isAdmin || !m.admin);
+  const menuFor = MENU.filter(m => isAdmin || !m.admin || m.viewerToo);
+  const mainMenu = menuFor.filter(m => !m.admin || !isAdmin); // 이용자: viewerToo 메뉴도 여기
+  const adminMenu = isAdmin ? menuFor.filter(m => m.admin) : [];
   React.useEffect(() => {
     // 권한이 없는 화면에 머물러 있으면 조달통계로
     if (!menuFor.some(m => m.id === active)) setActive("jodal-stats");
@@ -6923,7 +6933,7 @@ function App() {
       letterSpacing: 0.4,
       textTransform: "uppercase"
     }
-  }, "\uBA54\uB274"), menuFor.filter(m => !m.admin).map(node => /*#__PURE__*/React.createElement(NavNode, {
+  }, "\uBA54\uB274"), mainMenu.map(node => /*#__PURE__*/React.createElement(NavNode, {
     key: node.id,
     node: node,
     expanded: expanded,
@@ -6944,7 +6954,7 @@ function App() {
       color: "var(--text-tertiary)",
       letterSpacing: 0.4
     }
-  }, "\uAD00\uB9AC\uC790")), menuFor.filter(m => m.admin).map(node => /*#__PURE__*/React.createElement(NavNode, {
+  }, "\uAD00\uB9AC\uC790")), adminMenu.map(node => /*#__PURE__*/React.createElement(NavNode, {
     key: node.id,
     node: node,
     expanded: expanded,
@@ -7097,8 +7107,9 @@ function App() {
     pending: []
   }) : active === "bid-notices" ? /*#__PURE__*/React.createElement(BidNoticePage, {
     bids: rawBids
-  }) : active === "bid-keywords" && isAdmin ? /*#__PURE__*/React.createElement(BidKeywordPage, null) : active === "user-roles" && isAdmin ? /*#__PURE__*/React.createElement(UserRolesPage, {
-    me: userEmail.toLowerCase()
+  }) : active === "bid-keywords" && isAdmin ? /*#__PURE__*/React.createElement(BidKeywordPage, null) : active === "user-roles" ? /*#__PURE__*/React.createElement(UserRolesPage, {
+    me: userEmail.toLowerCase(),
+    readOnly: !isAdmin
   }) : active === "item-id-by-vendor" ? /*#__PURE__*/React.createElement(VendorItemTable, {
     deliveryByProduct: deliveryByProduct,
     itemsByProduct: itemsByProduct
