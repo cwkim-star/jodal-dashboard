@@ -444,31 +444,32 @@ const NAV_COLLAPSED_KEY = "jodal3_nav_collapsed";
 // depth: 1 = 최상위, 2 = 하위(리프)
 // 메뉴는 "메뉴"(조회)와 "관리자"(관리) 두 묶음으로 나눠 보여준다.
 // 권한은 나누지 않는다 — 회사 계정으로 로그인하면 누구나 두 묶음 모두 보고 쓸 수 있다.
+// 조회 메뉴와 관리 메뉴는 같은 대상끼리 이름을 맞춘다 ("○○ 현황" ↔ "○○ 관리"), 순서도 같게
 const MENU = [{
   id: "jodal-stats",
-  label: "조달통계",
+  label: "조달통계 현황",
   depth: 1
 }, {
   id: "item-list",
-  label: "등록 품목",
+  label: "물품식별번호 현황",
   depth: 1
 }, {
   id: "bid-notices",
-  label: "입찰공고",
+  label: "입찰공고 현황",
   depth: 1
+}, {
+  id: "delivery-manage",
+  label: "조달통계 실적관리",
+  depth: 1,
+  group: "admin"
 }, {
   id: "item-id-manage",
   label: "물품식별번호 관리",
   depth: 1,
   group: "admin"
 }, {
-  id: "delivery-manage",
-  label: "납품요구 물품내역 관리",
-  depth: 1,
-  group: "admin"
-}, {
   id: "bid-keywords",
-  label: "입찰 키워드 관리",
+  label: "입찰공고 키워드관리",
   depth: 1,
   group: "admin"
 }];
